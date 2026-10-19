@@ -3,21 +3,45 @@ import Head from "next/head";
 import PageHeader from "@/components/PageHeader";
 import Tabs from "@/components/Tabs";
 import Composer from "@/components/Composer";
+import PostList from "@/components/PostList";
 import EmptyState from "@/components/EmptyState";
 import Skeleton from "@/components/Skeleton";
 import { HomeIcon, UsersIcon } from "@/components/icons";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useToast } from "@/hooks/useToast";
+import { useFeed } from "@/hooks/useFeed";
+import { usePostActions } from "@/hooks/usePostActions";
+import { errorFields, errorMessage } from "@/services/api";
 
 export default function HomePage() {
   const { user, ready } = useRequireAuth();
   const { toast } = useToast();
+  const { createPost } = usePostActions();
+
   const [tab, setTab] = useState("for-you");
   const [draft, setDraft] = useState("");
+  const [images, setImages] = useState([]);
+  const [publishing, setPublishing] = useState(false);
 
-  function publish() {
-    // Phase 2 swaps this for postService.create({ content, images }).
-    toast("Draft kept. Publishing arrives with Phase 2.", { variant: "info" });
+  const feed = useFeed({ enabled: ready });
+
+  async function publish() {
+    if (publishing) return;
+    setPublishing(true);
+    try {
+      await createPost({ content: draft, images });
+      // Clear only on success, so a failed post is never lost.
+      setDraft("");
+      setImages([]);
+      toast("Your post is live.", { variant: "success" });
+    } catch (error) {
+      const fields = errorFields(error);
+      toast(fields.content || fields.image || errorMessage(error, "Could not publish that post."), {
+        variant: "error",
+      });
+    } finally {
+      setPublishing(false);
+    }
   }
 
   return (
@@ -44,18 +68,28 @@ export default function HomePage() {
             currentUser={user}
             value={draft}
             onChange={setDraft}
+            images={images}
+            onImagesChange={setImages}
             onSubmit={publish}
-            allowImages={false}
+            submitting={publishing}
+            onImageError={(message) => toast(message, { variant: "error" })}
           />
 
           {tab === "for-you" ? (
-            <EmptyState icon={HomeIcon} title="Your feed is quiet">
-              Posts from people you follow, plus your own, land here in Phase 3. The
-              composer above is already wired to the design system.
-            </EmptyState>
+            <PostList
+              query={feed}
+              viewerId={user._id}
+              label="Your feed"
+              empty={
+                <EmptyState icon={HomeIcon} title="Your feed is quiet">
+                  Nothing here yet. Write the first post above, and it lands here
+                  straight away.
+                </EmptyState>
+              }
+            />
           ) : (
             <EmptyState icon={UsersIcon} title="Nothing from people you follow">
-              Following arrives in Phase 3. Once it does, this tab shows only their posts,
+              Following arrives in Phase 3. Until then, For you shows your own posts,
               newest first.
             </EmptyState>
           )}

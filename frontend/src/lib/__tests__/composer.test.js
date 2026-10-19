@@ -46,4 +46,19 @@ describe("isPostable", () => {
     expect(isPostable("x".repeat(POST_MAX))).toBe(true);
     expect(isPostable("x".repeat(POST_MAX + 1))).toBe(false);
   });
+
+  it("accepts an image with empty text, like the API does", () => {
+    expect(isPostable("", 1)).toBe(true);
+    expect(isPostable("   ", 2)).toBe(true);
+    expect(isPostable("a caption", 1)).toBe(true);
+  });
+
+  it("stays closed when there are neither images nor text", () => {
+    expect(isPostable("", 0)).toBe(false);
+    expect(isPostable(undefined)).toBe(false);
+  });
+
+  it("refuses a draft that is over the limit even with an image", () => {
+    expect(isPostable("x".repeat(POST_MAX + 1), 1)).toBe(false);
+  });
 });

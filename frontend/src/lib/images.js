@@ -34,3 +34,20 @@ export function validateImageBatch(files, alreadySelected = 0) {
   }
   return "";
 }
+
+/**
+ * Ask Cloudinary for a right-sized asset at delivery time instead of storing
+ * one. The docs' media slot is 16:9, so the crop is requested here and the
+ * image element can trust a fixed aspect ratio. Any non-Cloudinary URL (a blob
+ * preview, for instance) is passed through untouched.
+ */
+export const POST_IMAGE_TRANSFORM = "w_1200,ar_16:9,c_fill,g_auto,q_auto,f_auto";
+export const AVATAR_TRANSFORM = "w_200,ar_1:1,c_fill,g_auto,q_auto,f_auto";
+
+export function cloudinaryUrl(url, transform = POST_IMAGE_TRANSFORM) {
+  const value = typeof url === "string" ? url : "";
+  if (!value || !value.includes("/image/upload/")) return value;
+  // Never stack the transform if the URL already carries it.
+  if (value.includes(`/image/upload/${transform}/`)) return value;
+  return value.replace("/image/upload/", `/image/upload/${transform}/`);
+}

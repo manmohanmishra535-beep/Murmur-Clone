@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import Avatar from "./Avatar";
 import Button from "./Button";
@@ -10,15 +10,18 @@ import {
   ringOffset,
   RING_CIRCUMFERENCE,
 } from "@/lib/composer";
+import {
+  ALLOWED_IMAGE_LABEL,
+  ALLOWED_IMAGE_TYPES,
+  MAX_POST_IMAGES,
+  validateImageBatch,
+} from "@/lib/images";
 
 const TONE_COLOR = {
   normal: "var(--ink-3)",
   warn: "var(--warn)",
   danger: "var(--danger)",
 };
-
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Ring counter: full at 280 remaining, amber at 20, red below 0.
@@ -63,17 +66,21 @@ function CounterRing({ remaining }) {
   );
 }
 
+/**
+ * Controlled composer: the page owns the draft text and the selected files so
+ * it can survive a failed submit. Up to 4 images, previewed with a remove
+ * button and checked against the docs' rules before they are uploaded.
+ */
 export default function Composer({
   currentUser,
   value,
   onChange,
+  images = [],
+  onImagesChange,
   onSubmit,
   submitting = false,
   disabled = false,
-  allowImages = false,
-  imagePreview,
-  onPickImage,
-  onRemoveImage,
+  allowImages = true,
   onImageError,
   placeholder = "What is happening on your street today?",
   id = "composer-input",
@@ -81,8 +88,16 @@ export default function Composer({
 }) {
   const textareaRef = useRef(null);
   const fileRef = useRef(null);
+  const [previews, setPreviews] = useState([]);
+
   const remaining = remainingCharacters(value);
-  const canPost = isPostable(value) && !submitting && !disabled;
+  const canPost = isPostable(value, images.length) && !submitting && !disabled;
+  const mayAddMore = allowImages && images.length < MAX_POST_IMAGES;
+  const addHint = !allowImages
+    ? "Images are not available here"
+    : mayAddMore
+      ? `Add images (up to ${MAX_POST_IMAGES})`
+      : `Up to ${MAX_POST_IMAGES} images per post`;
 
   // Grow with the text up to 320px, then scroll inside the field.
   useEffect(() => {
@@ -92,20 +107,28 @@ export default function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
   }, [value]);
 
-  function handleFile(event) {
-    const file = event.target.files && event.target.files[0];
-    event.target.value = "";
-    if (!file) return;
+  // Object URLs must be revoked, or the blobs leak for the tab's lifetime.
+  useEffect(() => {
+    const urls = images.map((file) => URL.createObjectURL(file));
+    setPreviews(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [images]);
 
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      onImageError?.("Use a JPEG, PNG, WebP or GIF image.");
+  function handleFiles(event) {
+    const chosen = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (chosen.length === 0) return;
+
+    const message = validateImageBatch(chosen, images.length);
+    if (message) {
+      onImageError?.(message);
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
-      onImageError?.("Images must be 5 MB or smaller.");
-      return;
-    }
-    onPickImage?.(file);
+    onImagesChange?.([...images, ...chosen].slice(0, MAX_POST_IMAGES));
+  }
+
+  function removeImage(index) {
+    onImagesChange?.(images.filter((_file, position) => position !== index));
   }
 
   function handleSubmit(event) {
@@ -143,19 +166,32 @@ export default function Composer({
             className="w-full resize-none overflow-y-auto bg-transparent text-lg leading-snug text-ink placeholder:text-ink-3 focus:outline-none disabled:cursor-not-allowed"
           />
 
-          {imagePreview ? (
-            <div className="relative mt-3 overflow-hidden rounded-lg border border-line">
-              {/* A local object URL, so next/image optimisation does not apply. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imagePreview} alt="Selected image preview" className="max-h-72 w-full object-cover" />
-              <button
-                type="button"
-                onClick={() => onRemoveImage?.()}
-                aria-label="Remove image"
-                className="absolute right-2 top-2 grid h-11 w-11 place-items-center rounded-pill bg-surface text-ink shadow-1 transition-colors duration-fast hover:bg-surface-2"
-              >
-                <CloseIcon size={18} />
-              </button>
+          {previews.length > 0 ? (
+            <div
+              className={clsx(
+                "mt-3 grid gap-2 overflow-hidden rounded-lg",
+                previews.length === 1 ? "grid-cols-1" : "grid-cols-2"
+              )}
+            >
+              {previews.map((preview, index) => (
+                <div key={preview} className="relative">
+                  {/* A local object URL, so next/image optimisation does not apply. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={preview}
+                    alt={`Selected image ${index + 1} preview`}
+                    className="max-h-72 w-full rounded-lg border border-line object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(index)}
+                    aria-label={`Remove image ${index + 1}`}
+                    className="absolute right-2 top-2 grid h-11 w-11 place-items-center rounded-pill bg-surface text-ink shadow-1 transition-colors duration-fast hover:bg-surface-2"
+                  >
+                    <CloseIcon size={18} />
+                  </button>
+                </div>
+              ))}
             </div>
           ) : null}
 
@@ -164,8 +200,9 @@ export default function Composer({
               <input
                 ref={fileRef}
                 type="file"
+                multiple
                 accept={ALLOWED_IMAGE_TYPES.join(",")}
-                onChange={handleFile}
+                onChange={handleFiles}
                 className="hidden"
                 tabIndex={-1}
                 aria-hidden="true"
@@ -173,15 +210,18 @@ export default function Composer({
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                disabled={!allowImages || disabled || submitting}
-                title={allowImages ? "Add an image" : "Images arrive with Phase 2"}
+                disabled={!mayAddMore || disabled || submitting}
+                title={addHint}
                 className="grid h-11 w-11 place-items-center rounded-pill text-accent transition-colors duration-fast hover:bg-accent-soft disabled:cursor-not-allowed disabled:text-ink-3 disabled:hover:bg-transparent"
               >
                 <ImageIcon size={20} />
-                <span className="sr-only">
-                  {allowImages ? "Add an image" : "Add an image (available in Phase 2)"}
-                </span>
+                <span className="sr-only">{addHint}</span>
               </button>
+              {images.length > 0 ? (
+                <span className="text-xs text-ink-3" aria-hidden="true">
+                  {images.length}/{MAX_POST_IMAGES}
+                </span>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-3">
@@ -191,6 +231,12 @@ export default function Composer({
               </Button>
             </div>
           </div>
+
+          {allowImages ? (
+            <p className="sr-only" id={`${id}-image-hint`}>
+              {`Optional images: ${ALLOWED_IMAGE_LABEL}, up to 5 MB each, ${MAX_POST_IMAGES} per post.`}
+            </p>
+          ) : null}
         </div>
       </div>
     </form>

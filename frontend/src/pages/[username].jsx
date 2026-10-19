@@ -9,8 +9,10 @@ import Button from "@/components/Button";
 import Tabs from "@/components/Tabs";
 import EmptyState from "@/components/EmptyState";
 import Skeleton from "@/components/Skeleton";
+import PostList from "@/components/PostList";
 import { BookmarkIcon, PencilIcon, ReplyIcon, UserIcon } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserPosts } from "@/hooks/useFeed";
 import { userService } from "@/services/userService";
 import { errorCode } from "@/services/api";
 import { compactNumber, joinedDate } from "@/lib/format";
@@ -31,6 +33,8 @@ export default function ProfilePage() {
   const profile = profileQuery.data;
   const notFound = profileQuery.isError && errorCode(profileQuery.error) === "NOT_FOUND";
   const isOwn = Boolean(profile && viewer && profile._id === viewer._id);
+
+  const posts = useUserPosts(username, { enabled: Boolean(profile) });
 
   // A disabled query (router.query.username not ready yet, e.g. during the
   // pre-hydration render) is also "pending" in React Query v5, so this covers
@@ -132,6 +136,12 @@ export default function ProfilePage() {
         <p className="mt-2 flex flex-wrap gap-4 text-sm text-ink-3">
           <span>
             <b className="font-semibold text-ink tabular">
+              {compactNumber(profile.postCount)}
+            </b>{" "}
+            posts
+          </span>
+          <span>
+            <b className="font-semibold text-ink tabular">
               {compactNumber(profile.followingCount)}
             </b>{" "}
             following
@@ -157,16 +167,23 @@ export default function ProfilePage() {
       />
 
       {tab === "posts" ? (
-        <EmptyState icon={UserIcon} title={isOwn ? "Your posts land here" : "No posts yet"}>
-          {isOwn
-            ? "Posting ships in Phase 2. The composer on Home is already built."
-            : `When @${profile.username} posts, it will show up here, newest first.`}
-        </EmptyState>
+        <PostList
+          query={posts}
+          viewerId={viewer?._id}
+          label={isOwn ? "Your posts" : `Posts by @${profile.username}`}
+          empty={
+            <EmptyState icon={UserIcon} title={isOwn ? "Your posts land here" : "No posts yet"}>
+              {isOwn
+                ? "Write something from the composer on Home and it shows up here."
+                : `When @${profile.username} posts, it will show up here, newest first.`}
+            </EmptyState>
+          }
+        />
       ) : null}
 
       {tab === "replies" ? (
         <EmptyState icon={ReplyIcon} title="No replies yet">
-          Comments arrive in Phase 2, replies in Phase 3.
+          Comments and replies arrive in Phase 3.
         </EmptyState>
       ) : null}
 

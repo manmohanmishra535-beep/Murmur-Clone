@@ -112,6 +112,7 @@ export default function DesignSystemPage() {
   const [theme, setTheme] = useState("system");
   const [tab, setTab] = useState("for-you");
   const [draft, setDraft] = useState("");
+  const [designImages, setDesignImages] = useState([]);
 
   useEffect(() => {
     setTheme(getStoredTheme());
@@ -405,8 +406,8 @@ export default function DesignSystemPage() {
                     { key: "following", label: "Following" },
                   ]}
                 />
-                <PostCard post={{ ...MOCK_POSTS[0], mediaPlaceholder: true }} />
-                <PostCard post={MOCK_POSTS[1]} />
+                <PostCard post={{ ...MOCK_POSTS[0], mediaPlaceholder: true }} demo />
+                <PostCard post={MOCK_POSTS[1]} demo />
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-ink-3">
@@ -428,12 +429,13 @@ export default function DesignSystemPage() {
                   currentUser={{ username: "priya", displayName: "Priya Nair" }}
                   value={draft}
                   onChange={setDraft}
+                  images={designImages}
+                  onImagesChange={setDesignImages}
                   onSubmit={() =>
                     toast(`Draft is ${remaining} characters under the limit.`, {
                       variant: "success",
                     })
                   }
-                  allowImages={false}
                 />
               </div>
               <p className="mt-3 text-sm text-ink-3">

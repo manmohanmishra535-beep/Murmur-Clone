@@ -206,6 +206,18 @@ describe("GET /api/posts/:id", () => {
     expect((await client.get(`/api/posts/${missing}`)).status).toBe(404);
     expect((await client.get("/api/posts/not-an-object-id")).status).toBe(404);
   });
+
+  it("is readable without a session, with the viewer flags off", async () => {
+    const { client } = await registerUser();
+    const created = await createPost(client, { content: "a shared link" });
+
+    const res = await anonymous().get(`/api/posts/${created.body._id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe("a shared link");
+    expect(res.body.likedByMe).toBe(false);
+    expect(res.body.bookmarkedByMe).toBe(false);
+  });
 });
 
 describe("GET /api/posts/user/:username", () => {
@@ -256,8 +268,14 @@ describe("GET /api/posts/user/:username", () => {
     expect(nonsense.status).toBe(200);
   });
 
-  it("needs a session", async () => {
-    expect((await anonymous().get("/api/posts/user/priya")).status).toBe(401);
+  it("is readable without a session", async () => {
+    const { client } = await registerUser();
+    await createPost(client, { content: "public timeline" });
+
+    const res = await anonymous().get("/api/posts/user/priya");
+
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((post) => post.content)).toEqual(["public timeline"]);
   });
 });
 

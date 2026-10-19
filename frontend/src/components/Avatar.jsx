@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import Image from "next/image";
+import { AVATAR_TRANSFORM, cloudinaryUrl } from "@/lib/images";
 
 /** Sizes 32, 44 and 96. Initials fall back to accent-soft. */
 const SIZES = {
@@ -43,7 +44,7 @@ export default function Avatar({
       >
         {optimizable ? (
           <Image
-            src={url}
+            src={cloudinaryUrl(url, AVATAR_TRANSFORM)}
             alt={`${label}'s avatar`}
             width={size}
             height={size}

@@ -26,13 +26,3 @@ export function useUserPosts(username, { enabled = true } = {}) {
     enabled: enabled && Boolean(username),
   });
 }
-
-/** Infinite query pages are flattened by hand; every list does it the same way. */
-export function flattenPages(data) {
-  if (!data || !Array.isArray(data.pages)) return [];
-  return data.pages.flatMap((page) => page.items || []);
-}
-
-export function countPages(data) {
-  return flattenPages(data).length;
-}
