@@ -16,7 +16,7 @@ export default function BookmarksPage() {
       {ready ? (
         <EmptyState icon={BookmarkIcon} title="Nothing saved yet">
           Bookmarks are private and stored on your user document. Saving ships in
-          Phase 4; the bookmark action is already in the PostCard.
+          Phase 4; the bookmark action is already drawn in the PostCard.
         </EmptyState>
       ) : null}
     </>

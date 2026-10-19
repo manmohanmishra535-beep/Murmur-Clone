@@ -272,10 +272,11 @@ cleanup when a later upload fails, read and 404s, the public read paths, the use
 with cursor pagination that new posts cannot shift, limit clamping, the feed, owner-only
 edit with `editedAt`, delete with Cloudinary teardown, 403s, and the profile post count.
 
-Frontend: 41 tests over the pure modules — `compactNumber`, `relativeTime`,
+Frontend: 51 tests over the pure modules — `compactNumber`, `relativeTime`,
 `joinedDate`, the client-side validators, the composer counter maths and `isPostable` with
-images, the image type/size/batch rules, the Cloudinary transform helper, and the post
-list helpers (`flattenPages`, `isOwnPost`, `withoutPost`).
+images, the image type/size/batch rules, the Cloudinary transform helper, the post list
+helpers (`flattenPages`, `isOwnPost`, `withoutPost`), and the share helper's sheet,
+clipboard, cancellation and failure paths.
 
 Component tests with React Testing Library and the Playwright end-to-end flow are
 scheduled with Phase 2, when PostCard and the feed become real; the lib tests above are
@@ -353,6 +354,15 @@ the pieces that already exist.
 - **Offline note on `PATCH` and multipart.** Editing edits the text only, and sends JSON;
   images are not replaceable in Phase 2. The docs do not ask for it, and a partial image
   swap would need orphan handling on the edit path as well as the create path.
+- **Sharing never fails quietly.** `lib/share.js` is shared by PostList and the single post
+  page. It prefers `navigator.share`, falls back to the clipboard, treats a dismissed sheet
+  as a cancellation, and reports a genuine failure with the link spelled out — a Share
+  click that returns nothing at all is worse than an ugly message. The image rule constants
+  live in `lib/images.js` only; the settings page imports them rather than keeping a second
+  copy of "5 MB".
+- **Only the first post image is `priority`.** Everything below the fold stays lazy, and
+  `sizes="(max-width: 720px) 100vw, 600px"` keeps the browser from picking the 3840px
+  candidate for a 600px slot.
 
 ---
 

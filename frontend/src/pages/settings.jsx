@@ -12,11 +12,10 @@ import { useToast } from "@/hooks/useToast";
 import { errorFields, errorMessage } from "@/services/api";
 import { userService } from "@/services/userService";
 import { BIO_MAX, validateProfile } from "@/lib/validation";
+import { ALLOWED_IMAGE_TYPES, validateImageFile } from "@/lib/images";
 import { applyTheme, getStoredTheme, THEMES } from "@/lib/theme";
 import { joinedDate } from "@/lib/format";
 
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const THEME_ICONS = { system: MonitorIcon, light: SunIcon, dark: MoonIcon };
 
 export default function SettingsPage() {
@@ -68,12 +67,10 @@ export default function SettingsPage() {
     event.target.value = "";
     if (!next) return;
 
-    if (!ALLOWED_IMAGE_TYPES.includes(next.type)) {
-      toast("Use a JPEG, PNG, WebP or GIF image.", { variant: "error" });
-      return;
-    }
-    if (next.size > MAX_IMAGE_BYTES) {
-      toast("Images must be 5 MB or smaller.", { variant: "error" });
+    // Same rules as the composer, from one place.
+    const problem = validateImageFile(next);
+    if (problem) {
+      toast(problem, { variant: "error" });
       return;
     }
     setFile(next);
