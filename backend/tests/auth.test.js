@@ -184,4 +184,28 @@ describe("GET /api/health", () => {
     expect(res.body.status).toBe("ok");
     expect(["connected", "disconnected"]).toContain(res.body.db);
   });
+
+  it("stamps every response with a request id for the logs", async () => {
+    const res = await anonymous().get("/api/health");
+
+    expect(res.headers["x-request-id"]).toMatch(/^[A-Za-z0-9._-]{1,64}$/);
+  });
+
+  it("keeps a sane request id the caller supplies", async () => {
+    // Proxies and the client can pass one along so a trace spans both.
+    const res = await anonymous().get("/api/health").set("X-Request-Id", "trace-123");
+
+    expect(res.headers["x-request-id"]).toBe("trace-123");
+  });
+
+  it("replaces an id that is not the expected shape", async () => {
+    // Anything that could break a log line (spaces, control characters, an
+    // enormous value) is swapped for a fresh one rather than echoed back.
+    const res = await anonymous()
+      .get("/api/health")
+      .set("X-Request-Id", "bad id with spaces and [brackets]");
+
+    expect(res.headers["x-request-id"]).not.toBe("bad id with spaces and [brackets]");
+    expect(res.headers["x-request-id"]).toMatch(/^[A-Za-z0-9._-]{1,64}$/);
+  });
 });
