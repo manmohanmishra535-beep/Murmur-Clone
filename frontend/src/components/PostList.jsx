@@ -7,6 +7,7 @@ import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useToast } from "@/hooks/useToast";
 import { flattenPages } from "@/lib/posts";
+import { sharePost } from "@/lib/share";
 import { errorMessage } from "@/services/api";
 
 function PostSkeleton() {
@@ -48,16 +49,12 @@ export default function PostList({
 
   const share = useCallback(
     async (post) => {
-      const url = `${window.location.origin}/post/${post._id}`;
-      try {
-        if (navigator.share) {
-          await navigator.share({ url, title: `A post by @${post.author?.username}` });
-          return;
-        }
-        await navigator.clipboard.writeText(url);
+      const result = await sharePost(post);
+      if (result.ok && result.via === "clipboard") {
         toast("Link copied to your clipboard.", { variant: "success" });
-      } catch {
-        // The share sheet was dismissed, or the clipboard is blocked.
+      } else if (!result.ok && result.reason === "failed") {
+        // Never leave the click with no response at all.
+        toast(`Could not share that link. It is ${result.url}`, { variant: "error" });
       }
     },
     [toast]
@@ -90,11 +87,12 @@ export default function PostList({
   return (
     <div className={className}>
       <ul aria-label={label}>
-        {posts.map((post) => (
+        {posts.map((post, index) => (
           <li key={post._id}>
             <PostCard
               post={post}
               viewerId={viewerId}
+              priority={index === 0}
               onShare={share}
               onEdit={updatePost}
               onDelete={deletePost}

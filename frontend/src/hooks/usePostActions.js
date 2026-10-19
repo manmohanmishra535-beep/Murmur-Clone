@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { postService } from "@/services/postService";
 import { errorMessage } from "@/services/api";
+import { withoutPost } from "@/lib/posts";
 import { useToast } from "./useToast";
 
 /** Every cached list that holds posts: the feed and each profile timeline. */
@@ -80,7 +81,7 @@ export function usePostActions() {
   const deletePost = useCallback(
     async (post) => {
       const snapshots = snapshotLists(queryClient);
-      mapLists(queryClient, (items) => items.filter((item) => item._id !== post._id));
+      queryClient.setQueriesData({ predicate: isPostList }, (data) => withoutPost(data, post._id));
 
       try {
         await postService.remove(post._id);

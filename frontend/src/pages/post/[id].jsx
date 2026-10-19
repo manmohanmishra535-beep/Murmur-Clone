@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/useToast";
 import { usePostActions } from "@/hooks/usePostActions";
 import { postService } from "@/services/postService";
 import { errorCode } from "@/services/api";
+import { sharePost } from "@/lib/share";
 
 export default function PostPage() {
   const router = useRouter();
@@ -36,16 +37,11 @@ export default function PostPage() {
   const notFound = postQuery.isError && errorCode(postQuery.error) === "NOT_FOUND";
 
   async function share(sharedPost) {
-    const url = `${window.location.origin}/post/${sharedPost._id}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ url, title: `A post by @${sharedPost.author?.username}` });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
+    const result = await sharePost(sharedPost);
+    if (result.ok && result.via === "clipboard") {
       toast("Link copied to your clipboard.", { variant: "success" });
-    } catch {
-      // The share sheet was dismissed, or the clipboard is blocked.
+    } else if (!result.ok && result.reason === "failed") {
+      toast(`Could not share that link. It is ${result.url}`, { variant: "error" });
     }
   }
 
@@ -92,6 +88,7 @@ export default function PostPage() {
         <PostCard
           post={post}
           viewerId={user?._id}
+          priority
           onShare={share}
           onEdit={updatePost}
           onDelete={remove}

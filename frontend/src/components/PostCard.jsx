@@ -15,6 +15,7 @@ import {
 } from "./icons";
 import { compactNumber, relativeTime } from "@/lib/format";
 import { cloudinaryUrl } from "@/lib/images";
+import { isOwnPost } from "@/lib/posts";
 import { POST_MAX } from "@/lib/composer";
 
 function ActionButton({
@@ -66,6 +67,7 @@ export default function PostCard({
   post,
   viewerId,
   demo = false,
+  priority = false,
   onLike,
   onRepost,
   onBookmark,
@@ -118,8 +120,7 @@ export default function PostCard({
 
   const author = post.author || {};
   const images = Array.isArray(post.images) ? post.images : [];
-  const isOwn = Boolean(viewerId && author._id && String(author._id) === String(viewerId));
-  const canManage = isOwn && Boolean(onEdit || onDelete);
+  const canManage = isOwnPost(post, viewerId) && Boolean(onEdit || onDelete);
   const remaining = POST_MAX - editValue.trim().length;
   const overLimit = remaining < 0;
 
@@ -365,6 +366,9 @@ export default function PostCard({
                 width={1200}
                 height={675}
                 sizes="(max-width: 720px) 100vw, 600px"
+                // The first image of a list sits above the fold, so it is the LCP
+                // candidate; anything below it stays lazy.
+                priority={priority && index === 0}
                 className="h-auto w-full rounded-lg border border-line object-cover"
               />
             ))}

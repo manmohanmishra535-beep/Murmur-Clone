@@ -3,8 +3,8 @@
 A text-first microblogging app: a Next.js client and an Express REST API on MongoDB.
 Short posts, quiet interface.
 
-This repository contains the **foundation plus Phase 1 (Authentication)** from the
-Murmur engineering docs, together with the design system from the Murmur design
+This repository contains the **foundation plus Phases 1 (Authentication) and 2 (Posts)**
+from the Murmur engineering docs, together with the design system from the Murmur design
 system v1.0 document.
 
 ```
@@ -37,6 +37,26 @@ The "done when" line for Phase 1 — *a user can sign up, log in, and edit a pro
 unauthenticated calls return 401* — is covered by the API tests and was verified over
 real HTTP.
 
+### Phase 2 — Posts (complete)
+
+| Deliverable | Where |
+| --- | --- |
+| `Post` model with the documented fields and both indexes | `backend/models/Post.js` |
+| Create, read, edit and delete a post | `backend/controllers/postController.js` |
+| Image upload, up to 4 per post, JPEG/PNG/WebP/GIF at 5 MB each, into `murmur/posts` | `backend/middleware/upload.js`, `controllers/postController.js` |
+| Cloudinary images removed by `publicId` when a post is deleted | `backend/controllers/postController.js` |
+| Wire shapes (`serializePost`, `serializeAuthor`, `paginated`) | `backend/utils/serialize.js` |
+| Content rules after trimming: 1–280 characters, or an image on its own | `backend/validators/post.js`, `frontend/src/lib/composer.js` |
+| Cursor pagination, default 20, maximum 50 | `backend/utils/pagination.js` |
+| Composer with up to 4 image previews and a live `n/4` count | `frontend/src/components/Composer.jsx` |
+| PostCard with an owner menu: inline edit and a two-step delete | `frontend/src/components/PostCard.jsx` |
+| Shared list rendering with infinite scroll | `frontend/src/components/PostList.jsx`, `hooks/useInfiniteScroll.js` |
+| Home feed, your profile's Posts tab, and a public single-post page | `frontend/src/pages/index.jsx`, `[username].jsx`, `post/[id].jsx` |
+
+The "done when" line for Phase 2 — *a post with an image appears on the author's profile* —
+was verified over real HTTP in a browser against an in-memory MongoDB, with the Cloudinary
+upload stubbed because no credentials were available locally.
+
 ### Design system (complete)
 
 `tokens.css` and `tailwind.config.js` are the delivered files; Tailwind reads the same
@@ -51,10 +71,14 @@ component, the layout rules and the do/don't list. It includes a theme switcher.
 
 ### Deliberately not built yet
 
-Phases 2 to 5: posts and comments, likes/reposts/bookmarks beyond the PostCard UI,
-the home feed query, follows, notifications, direct messages, search, Socket.IO,
-Docker and CI. The placeholder screens say which phase each belongs to, and the
-navigation is complete so nothing dead-ends.
+Phases 3 to 5: comments and replies, likes, reposts, bookmarks, the follow graph,
+notifications, direct messages, search, `GET /api/posts/explore`, the following timeline,
+Socket.IO, Docker and CI.
+
+PostCard already draws the like, repost and bookmark buttons, but on real posts they are
+`disabled` with a phase-labelled label instead of pretending to work — only `/design` uses
+the interactive fake counters. The placeholder screens say which phase each belongs to,
+and the navigation is complete so nothing dead-ends.
 
 ---
 
@@ -164,6 +188,21 @@ All routes are under `/api` and speak JSON. Errors always use
 | GET | `/api/auth/me` | yes | `200 { user }` |
 | GET | `/api/users/:username` | optional | Public profile with counts and `isFollowing` |
 | PATCH | `/api/users/me` | yes | multipart: `displayName`, `bio`, `image` |
+| POST | `/api/posts` | yes | multipart: `content` plus up to 4 `images` → `201` and a bare post |
+| GET | `/api/posts/feed` | yes | The home feed: your posts plus the people you follow |
+| GET | `/api/posts/user/:username` | optional | That author's posts, newest first |
+| GET | `/api/posts/:id` | optional | A single post, for shared links |
+| PATCH | `/api/posts/:id` | yes, owner | JSON `content` → `200`, sets `editedAt` |
+| DELETE | `/api/posts/:id` | yes, owner | `204`, and its Cloudinary images go with it |
+
+**Response shapes.** Post lists are `{ items, nextCursor }`, where `nextCursor` is the last
+`_id` or `null`. A single post is returned bare rather than wrapped in `{ post }`, which is
+what the engineering docs show — this is the one place the API departs from the `{ user }`
+wrapper that the Phase 1 auth routes use.
+
+Every post carries `likedByMe`, `repostedByMe` and `bookmarkedByMe`, computed per request.
+Those three are always `false` in Phase 2 because the endpoints that would set them are
+Phase 3; the fields exist now so the client does not have to change later.
 
 Status codes in use: `400`, `401`, `403`, `404`, `409` (`ALREADY_EXISTS`), `413`, `422`
 (`VALIDATION_FAILED`), `429` (`RATE_LIMITED`), `500`.
@@ -178,6 +217,8 @@ Status codes in use: `400`, `401`, `403`, `404`, `409` (`ALREADY_EXISTS`), `413`
 | `bio` | up to 160 characters |
 | `displayName` | up to 50 characters |
 | `image` | JPEG, PNG, WebP or GIF, up to 5 MB |
+| `post.content` | 1 to 280 characters after trimming, or empty when an image is attached |
+| post images | 1 to 4 files, JPEG, PNG, WebP or GIF, up to 5 MB each |
 
 ---
 
@@ -188,7 +229,13 @@ Status codes in use: `400`, `401`, `403`, `404`, `409` (`ALREADY_EXISTS`), `413`
 `bio`, and `followers` / `following` / `bookmarks` as ObjectId arrays, plus a text index
 on `username` and `displayName` for Phase 4 search.
 
-`Post`, `Comment`, `Notification`, `Conversation` and `Message` arrive with their phases.
+`Post` matches the engineering docs: `author`, `content`, `images[]` (`{ url, publicId }`),
+`likes[]`, `likeCount`, `commentCount`, `repostCount`, `repostOf`, `createdAt` and
+`editedAt`, with `{ author: 1, createdAt: -1 }` and `{ createdAt: -1 }` indexes. The
+`likeCount` and `commentCount` denormalised counters are on the document from the start,
+even though only Phase 3 will write them.
+
+`Comment`, `Notification`, `Conversation` and `Message` arrive with their phases.
 
 ---
 
@@ -214,15 +261,21 @@ npm --prefix backend test      # Jest + Supertest + mongodb-memory-server
 npm --prefix frontend test     # Jest on the pure lib modules
 ```
 
-Backend: 33 tests covering register (success, 422 field errors, 409 for username and
-email, lowercase normalisation, hashing), login (success, 401 twice, 422), `/auth/me`
-(401 without a cookie, 401 for a tampered token, 200 with one), logout, the health
-check, profile read (public, owner-only email, 404), profile edit (success, 422 for bio
-and display name, rejected non-image upload), plus unit tests for token helpers, the
-pagination cursor and `AppError`.
+Backend: 63 tests. Authentication (33): register (success, 422 field errors, 409 for
+username and email, lowercase normalisation, hashing), login (success, 401 twice, 422),
+`/auth/me` (401 without a cookie, 401 for a tampered token, 200 with one), logout, the
+health check, profile read (public, owner-only email, 404), profile edit (success, 422 for
+bio and display name, rejected non-image upload), plus unit tests for token helpers, the
+pagination cursor and `AppError`. Posts (30): create with text, with images, image-only,
+422 for empty and over-length content, an unsupported type and an oversized file, orphan
+cleanup when a later upload fails, read and 404s, the public read paths, the user timeline
+with cursor pagination that new posts cannot shift, limit clamping, the feed, owner-only
+edit with `editedAt`, delete with Cloudinary teardown, 403s, and the profile post count.
 
-Frontend: 19 tests over the pure modules — `compactNumber`, `relativeTime`,
-`joinedDate`, the client-side validators and the composer counter maths.
+Frontend: 41 tests over the pure modules — `compactNumber`, `relativeTime`,
+`joinedDate`, the client-side validators, the composer counter maths and `isPostable` with
+images, the image type/size/batch rules, the Cloudinary transform helper, and the post
+list helpers (`flattenPages`, `isOwnPost`, `withoutPost`).
 
 Component tests with React Testing Library and the Playwright end-to-end flow are
 scheduled with Phase 2, when PostCard and the feed become real; the lib tests above are
@@ -269,12 +322,42 @@ the pieces that already exist.
 - **PostCard's `<time>` opts out of hydration warnings.** Relative timestamps
   ("2h", "3d") are computed from `Date.now()` while the design-system page's sample posts
   are rendered on both the server and the client, so the two values legitimately differ.
-  `suppressHydrationWarning` lets the client value win; real posts from Phase 2 arrive
-  client-side only.
+  `suppressHydrationWarning` lets the client value win; real posts arrive client-side only.
+- **Reading posts is public, writing is not.** `GET /api/posts/:id` and
+  `GET /api/posts/user/:username` use `optionalAuth`, matching the frontend route table,
+  where `/post/[id]` and `/[username]` are public so a shared link opens for a signed-out
+  visitor. `POST`, `PATCH`, `DELETE` and `GET /api/posts/feed` require a session, and the
+  edit and delete controllers check ownership on top of that. The controller is therefore
+  not wrapped in a single `router.use(requireAuth)`.
+- **The home feed exists in Phase 2.** The docs schedule the home feed with Phase 3, but
+  without it writing a post would be a dead end. It reads
+  `authors = [...req.user.following, req.user._id]`, which simply degenerates to your own
+  posts until the follow graph arrives, and needs no change then.
+- **Post images are forced to 16:9.** Cloudinary's transform is
+  `w_1200,ar_16:9,c_fill,g_auto,q_auto,f_auto` (`POST_IMAGE_TRANSFORM`), so the media slot
+  has exactly one shape at every breakpoint and `<Image width={1200} height={675}>` is
+  truthful instead of letterboxing or shifting the layout as images load. Avatars use the
+  square `AVATAR_TRANSFORM` and go through the same `cloudinaryUrl()` helper, which never
+  stacks a transform twice.
+- **An oversized file is refused before it is read.** `validateImageFile` checks type and
+  size on the client too, so the common mistakes never cost an upload; the multer limits in
+  `middleware/upload.js` and the validator in `validators/post.js` are still the authority.
+- **PostCard's `demo` prop.** The design-system page needs the like, repost and bookmark
+  buttons to actually toggle for a design reference, but Phase 2 has no endpoints behind
+  them. `demo` keeps the local optimistic counters for `/design`, and everywhere else the
+  three buttons render `disabled` with an aria label such as "Like, available in Phase 3".
+- **The composer stays controlled.** `value`/`onChange` are still owned by the page, with
+  `images`/`onImagesChange` alongside them, so `/design` can mirror a draft and the pages
+  can clear the composer only after the API confirms the post. Object-URL previews are
+  derived and revoked inside the composer.
+- **Offline note on `PATCH` and multipart.** Editing edits the text only, and sends JSON;
+  images are not replaceable in Phase 2. The docs do not ask for it, and a partial image
+  swap would need orphan handling on the edit path as well as the create path.
 
 ---
 
 ## Next phase
 
-Phase 2 adds the `Post` model, `routes/posts.js`, image upload via multer to Cloudinary
-in `murmur/posts`, and wires the existing Composer, PostCard and `usePostActions` to it.
+Phase 3 adds comments and replies, the follow graph, likes, reposts and bookmarks with
+their endpoints, notifications, and the search and explore reads — then wires the counters
+that Phase 2 left `disabled` in PostCard and the tabs that already exist on the profile.
