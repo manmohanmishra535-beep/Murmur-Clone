@@ -1,6 +1,7 @@
 "use strict";
 
 const User = require("../models/User");
+const Post = require("../models/Post");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
 const { serializeUser } = require("../utils/serialize");
@@ -20,12 +21,13 @@ const getProfile = asyncHandler(async (req, res) => {
       ? req.user.following.some((id) => String(id) === String(user._id))
       : false;
 
+  const postCount = await Post.countDocuments({ author: user._id });
+
   res.status(200).json({
     user: serializeUser(user, {
       includeEmail: viewerId === String(user._id),
       isFollowing,
-      // Post counts arrive with the Post model in Phase 2.
-      counts: { postCount: 0 },
+      counts: { postCount },
     }),
   });
 });

@@ -25,7 +25,12 @@ export function ringOffset(remaining, circumference = RING_CIRCUMFERENCE) {
   return circumference * (1 - progress);
 }
 
-export function isPostable(text) {
+/**
+ * A draft is postable when it fits the limit and has something to say:
+ * 1 to 280 characters after trimming, or an image with empty text.
+ */
+export function isPostable(text, imageCount = 0) {
   const length = String(text || "").trim().length;
-  return length > 0 && length <= POST_MAX;
+  if (length > POST_MAX) return false;
+  return length > 0 || imageCount > 0;
 }
