@@ -188,7 +188,7 @@ Open <http://localhost:3000>, register a user, and the profile page loads.
 | Variable | Purpose |
 | --- | --- |
 | `NEXT_PUBLIC_API_URL` | Axios base URL, for example `http://localhost:5000/api` |
-| `NEXT_PUBLIC_SOCKET_URL` | Socket.IO endpoint (Phase 4) |
+| `NEXT_PUBLIC_SOCKET_URL` | Socket.IO endpoint, for example `http://localhost:5000` |
 
 ### Running without MongoDB
 
@@ -251,7 +251,7 @@ All routes are under `/api` and speak JSON. Errors always use
 | GET | `/api/posts/user/:username` | optional | That author's posts, newest first |
 | GET | `/api/posts/:id` | optional | A single post, for shared links |
 | PATCH | `/api/posts/:id` | yes, owner | JSON `content` → `200`, sets `editedAt` |
-| DELETE | `/api/posts/:id` | yes, owner | `204`, with its Cloudinary images and its replies |
+| DELETE | `/api/posts/:id` | yes, owner | `204`, with its Cloudinary images, its replies, its reposts and their notifications |
 | POST | `/api/posts/:id/like` | yes | `200 { liked: true, likeCount }`, idempotent |
 | DELETE | `/api/posts/:id/like` | yes | `200 { liked: false, likeCount }`, idempotent |
 | POST | `/api/posts/:id/repost` | yes | JSON `content` optional → `201` with the new post, `200` if you already reposted |
@@ -269,7 +269,7 @@ All routes are under `/api` and speak JSON. Errors always use
 | POST | `/api/conversations` | yes | JSON `userId` → `200` with the existing conversation or a new one |
 | GET | `/api/conversations/:id/messages` | yes, participant | Paged messages, newest first |
 | POST | `/api/conversations/:id/messages` | yes, participant | JSON `text` → `201` and a bare message |
-| GET | `/api/users/search?q=` | optional | Up to 10 accounts matching a username prefix or display name |
+| GET | `/api/users/search?q=` | yes | Up to 10 accounts matching a username prefix or display name |
 | GET | `/api/users/suggested` | yes | Up to 10 accounts the viewer does not follow, most followed first |
 
 **Response shapes.** Post lists, comment lists, user lists, notification lists, the inbox and
@@ -325,8 +325,12 @@ Status codes in use: `400` (`SELF_FOLLOW`, `SELF_CONVERSATION`), `401`, `403`, `
 | `post.content` | 1 to 280 characters after trimming, or empty when an image is attached |
 | post images | 1 to 4 files, JPEG, PNG, WebP or GIF, up to 5 MB each |
 | `comment.content` | 1 to 280 characters after trimming, always required |
+| `repost.content` | optional, up to 280 characters after trimming |
+| `message.text` | 1 to 2000 characters after trimming; the docs set no limit, this is the ceiling the UI also uses |
+| `userId` | a user `_id`; your own id is a `400 SELF_CONVERSATION` |
+| `q` | the search term; empty or missing answers an empty list rather than an error |
 | `limit` | 1 to 50, defaulting to 20 on every list endpoint |
-| `cursor` | a post/comment/user `_id`; a malformed one is a 422, never a 500 |
+| `cursor` | a post/comment/user/notification/message `_id`; a malformed one is a 422, never a 500 |
 
 ---
 
@@ -335,7 +339,7 @@ Status codes in use: `400` (`SELF_FOLLOW`, `SELF_CONVERSATION`), `401`, `403`, `
 `backend/models/User.js` matches the engineering docs: unique lowercase `username` and
 `email`, `password` with `select: false`, `displayName`, `profileImage { url, publicId }`,
 `bio`, and `followers` / `following` / `bookmarks` as ObjectId arrays, plus a text index
-on `username` and `displayName` for Phase 4 search.
+on `username` and `displayName` that backs the search screen.
 
 `Post` matches the engineering docs: `author`, `content`, `images[]` (`{ url, publicId }`),
 `likes[]`, `likeCount`, `commentCount`, `repostCount`, `repostOf`, `createdAt` and
@@ -346,7 +350,20 @@ on `username` and `displayName` for Phase 4 search.
 collection rather than inside the post, so a post with thousands of replies never grows the
 post document; `Post.commentCount` is the denormalised count kept beside it.
 
-`Notification`, `Conversation` and `Message` arrive with Phase 4.
+`Notification` matches the engineering docs: `recipient`, `actor`, `type`
+(`like` | `comment` | `follow` | `repost` | `message`), an optional `post`, an optional
+`conversation`, `read` and `createdAt`, with the `{ recipient: 1, read: 1, createdAt: -1 }`
+index the unread badge and the list both read.
+
+`Conversation` matches the engineering docs: `participants[]`, `lastMessage` and
+`updatedAt`, with `{ participants: 1, updatedAt: -1 }`. The pair of participants is not a
+unique key, which is the one place this deviates — see the notes below.
+
+`Message` matches the engineering docs: `conversation`, `sender`, `text`, `readAt` (reserved;
+no endpoint reads it yet) and `createdAt`, with `{ conversation: 1, createdAt: -1 }`.
+
+`User`'s text index on `username` and `displayName` was added with Phase 1 and is now what
+`GET /api/users/search` runs its `$text` half against.
 
 ---
 
@@ -361,6 +378,9 @@ post document; `Post.commentCount` is the denormalised count kept beside it.
 - Upload type and size checked on the server, not only in the browser
 - Post text and bios render as text through React, never `dangerouslySetInnerHTML`
 - Ownership checks return 403 for someone else's document
+- The Socket.IO handshake re-verifies the same httpOnly JWT; a socket without one is refused
+  before any handler runs, and a room is named after the user id rather than taken from the
+  client, so one account cannot subscribe to another's pushes
 - Login answers identically for a wrong password and an unknown email, so the endpoint
   cannot be used to enumerate accounts
 
@@ -372,7 +392,7 @@ npm --prefix backend test      # Jest + Supertest + mongodb-memory-server
 npm --prefix frontend test     # Jest on the pure lib modules
 ```
 
-Backend: 116 tests. Authentication and profiles (33): register (success, 422 field errors, 409
+Backend: 169 tests. Authentication and profiles (33): register (success, 422 field errors, 409
 for username and email, lowercase normalisation, hashing), login (success, 401 twice, 422),
 `/auth/me` (401 without a cookie, 401 for a tampered token, 200 with one), logout, the
 health check, profile read (public, owner-only email, 404), profile edit (success, 422 for
@@ -397,17 +417,42 @@ removing their posts again, per-viewer flags on one post, and one account's feed
 leaking into another's); explore; and cursor hygiene (a malformed cursor is a 422 on every
 list endpoint instead of a 500).
 
-Frontend: 67 tests over the pure modules — `compactNumber`, `relativeTime`,
+Advanced (53): reposts (the documented create, the original nested in `repostOf`,
+`repostCount` moving, a repeat POST answering the same repost rather than stacking a second,
+reposting a repost flattening to the original, `repostedByMe` true on both the original and a
+repost of it, and 204s that are safe to repeat); bookmarks (save, unsave, the list, paging,
+and one account's bookmarks staying invisible to another); notifications (a row for each of
+the five types, no row when the actor is the author, the like row leaving with the unlike,
+`unread-count`, marking everything read, the cascade when a post is deleted, and a 422
+cursor); search and suggestions (username prefix, a display-name word, the cap of 10, no
+private fields in a row, an empty `q`, a regex metacharacter, and suggestions excluding
+yourself and the people you already follow); conversations and messages (401s, opening the
+same conversation twice returning one conversation, `SELF_CONVERSATION`, an unknown account,
+a malformed id, the inbox newest first with the other participant resolved, message paging, a
+non-participant getting 403, and empty or oversized text); and a Socket.IO suite that starts a
+real HTTP server and connects a real `socket.io-client` — rejecting a missing and an invalid
+cookie, accepting the REST cookie, and then proving the Phase 4 done-when by liking over REST
+and receiving `notification:new` on the author's socket, along with `notification:remove`,
+`post:counts`, a socket-sent message stored for both participants, a failed send returning an
+ack instead of throwing, and typing reaching the peer only.
+
+Frontend: 110 tests over the pure modules — `compactNumber`, `relativeTime`,
 `joinedDate`, the client-side validators, the composer counter maths and `isPostable` with
 images, the image type/size/batch rules, the Cloudinary transform helper, the post list
 helpers (`flattenPages`, `isOwnPost`, `withoutPost`, `withLike`, `withCommentCount`,
-`withoutComment`, `withFollow`, `canFollow`), and the share helper's sheet, clipboard,
-cancellation and failure paths.
+`withoutComment`, `withFollow`, `canFollow`, `displayedPost`, `isPlainRepost`, `withRepost`,
+`withBookmark`, `withCounts`), the notification cache helpers (`notificationText`,
+`notificationPhrase`, `notificationHref`, `prependNotification`, `withoutNotification`,
+`isUnread`, `bumpUnread`, `flattenNotifications`), the message helpers (`messagesInOrder`,
+`appendMessage`, `withLastMessage`, `dayKey`, `conversationLabel`), and the share helper's
+sheet, clipboard, cancellation and failure paths.
 
 Component tests with React Testing Library and the Playwright end-to-end flow are still not
 part of `npm test`: the Jest config only collects `src/**/*.test.js`, and the browser surface
-in this environment cannot complete hydration, so the UI is verified by the production
-build, the linter and a 26-check end-to-end run over real HTTP against the running API.
+in this environment cannot complete hydration, so the UI is verified by the production build,
+the linter and end-to-end runs over real HTTP against the running API. The Phase 3 pass was 26
+checks; the Phase 4 pass is 58, against the real `server.js` with Socket.IO attached and the
+production frontend build, covering the whole Phase 4 surface including live delivery.
 
 ---
 
@@ -495,10 +540,11 @@ build, the linter and a 26-check end-to-end run over real HTTP against the runni
 - **Explore arrives a phase early.** `GET /api/posts/explore` is listed in the API
   reference's Posts module, and the home screen has had a "For you" tab since Phase 1.
   Leaving that tab as a placeholder while it is the default view was worse than shipping the
-  one cursor query behind it. Search is still a Phase 4 item and is still not built.
-- **Deleting a post deletes its replies.** `Comment.deleteMany({ post })` runs beside
-  `post.deleteOne()`, so a deleted post never leaves an orphaned thread. Notifications join
-  that cascade in Phase 4.
+  one cursor query behind it. Search, the other half of `/explore`, arrived with Phase 4.
+- **Deleting a post deletes its replies, its reposts and its notifications.**
+  `Comment.deleteMany({ post })` and `Post.deleteMany({ repostOf: post._id })` run beside
+  `post.deleteOne()`, and the notifications for the post and for each of its reposts go with
+  them, so nothing is left pointing at a document that no longer exists.
 - **Post images are forced to 16:9.** Cloudinary's transform is
   `w_1200,ar_16:9,c_fill,g_auto,q_auto,f_auto` (`POST_IMAGE_TRANSFORM`), so the media slot
   has exactly one shape at every breakpoint and `<Image width={1200} height={675}>` is
@@ -508,10 +554,9 @@ build, the linter and a 26-check end-to-end run over real HTTP against the runni
 - **An oversized file is refused before it is read.** `validateImageFile` checks type and
   size on the client too, so the common mistakes never cost an upload; the multer limits in
   `middleware/upload.js` and the validator in `validators/post.js` are still the authority.
-- **PostCard's `demo` prop.** The design-system page needs the like, repost and bookmark
-  buttons to actually toggle for a design reference, but Phase 2 has no endpoints behind
-  them. `demo` keeps the local optimistic counters for `/design`, and everywhere else the
-  three buttons render `disabled` with an aria label such as "Like, available in Phase 3".
+- **PostCard's `demo` prop.** The design-system page needs every counter to toggle without a
+  server, so `demo` keeps local optimistic counters for `/design` and is the only place they
+  exist. Real posts use `usePostActions`, which writes into the query cache.
 - **The composer stays controlled.** `value`/`onChange` are still owned by the page, with
   `images`/`onImagesChange` alongside them, so `/design` can mirror a draft and the pages
   can clear the composer only after the API confirms the post. Object-URL previews are
@@ -528,12 +573,87 @@ build, the linter and a 26-check end-to-end run over real HTTP against the runni
 - **Only the first post image is `priority`.** Everything below the fold stays lazy, and
   `sizes="(max-width: 720px) 100vw, 600px"` keeps the browser from picking the 3840px
   candidate for a 600px slot.
+- **A repost is a real `Post` document.** `repostOf` points at the original and `content` may
+  be empty or a comment of your own, which is exactly how the data model describes it: the
+  feed renders it as the original with a "Reposted by @someone" line, and a repost with
+  content of its own renders the reposter's card around a bordered copy of the original.
+- **One repost per account per post, and repeating the POST is not an error.** The button is
+  a toggle, so a second `POST` answers `200` with the repost that already exists instead of
+  stacking a duplicate and inflating `repostCount`. First one is a `201`. `DELETE` is a `204`
+  whether or not there was anything to undo. Same reasoning as the idempotent like and
+  follow, and it keeps `aria-pressed` honest.
+- **Reposting a repost flattens to the original.** `resolveOriginal` walks `repostOf` until it
+  finds the post that was written first, so the graph is never more than one level deep and a
+  chain of reposts cannot build up.
+- **`repostedByMe` costs one extra query per page, and is correct on both sides.** There is no
+  `reposts` array on `Post`, so the flag cannot come from the document. `viewerReposts`
+  collects both the post ids on the page and the ids of the originals they carry, runs one
+  `find({ author, repostOf: { $in: ids } })`, and passes the set down. A like, repost or
+  bookmark made from a repost card therefore shows as pressed on the original too, and vice
+  versa.
+- **Bookmarks are idempotent and private.** `$addToSet` / `$pull` on the viewer's own
+  `bookmarks` array, answering `{ bookmarked }`. `GET /api/posts/bookmarks` reads that array
+  and pages by post `_id`, not by the time it was saved — the docs give the list a `limit`
+  and a `cursor` but the model stores no per-bookmark timestamp, so the two cannot both be
+  honoured. Saving a post you saved months ago does not float it to the top.
+- **Notifications are created inside the request that caused them, then pushed.** v1 has no
+  job queue, so `notify()` runs after the write, wrapped so that a failure to record a
+  notification can never fail the like or the follow. It is skipped when the actor is the
+  recipient, and `dedupe` stops a toggling action from stacking rows.
+- **A toggling action takes its notification back.** Unliking, unfollowing and un-reposting
+  delete the row they created, so flipping a heart on and off cannot leave a stale row behind
+  or inflate the badge. The deletion is pushed as `notification:remove` — an event the docs'
+  table does not have, because the docs only describe the row being removed and an open screen
+  would otherwise keep showing it. The row's `read` flag travels with it so the client knows
+  whether the badge should move or just the row should disappear.
+- **`post:counts` is pushed to the author's room.** Whoever likes, replies to or reposts a
+  post changes counters that the author may be looking at. The push goes to the author rather
+  than to "everyone viewing", because the author is the only person the server knows is
+  interested, and it carries the same numbers the REST response does, so the two cannot
+  disagree.
+- **One socket for the session, and its handlers write into the query cache.**
+  `SocketProvider` opens a socket after login and closes it on logout; every handler updates
+  the React Query cache the screens already read from, so a push never causes a refetch. On
+  reconnect the unread count is refetched, because pushes missed while the socket was down
+  cannot be recovered.
+- **The socket sends messages; REST is the fallback.** `useSendMessage` uses `message:send`
+  when the socket is connected and `POST /conversations/:id/messages` otherwise. Both reach
+  the same server-side service, so there is still one code path per feature, and a send works
+  on a flaky connection where the socket has not come up yet.
+- **`getOrCreateConversation` is find-then-create, not an upsert.** MongoDB refuses an upsert
+  whose filter matches the same array twice (`$all` plus `$size` on `participants`), and
+  splitting it would trade one problem for another. Two people opening the chat with each
+  other in the same instant could therefore create two conversations, and the inbox would show
+  both. The fix is a canonical pair key with a unique index; it is noted here rather than
+  built, because the window is one round trip wide and the docs do not call for it.
+- **The inbox sorts by activity, so it has no cursor.** "Most recently active first" means an
+  offset cursor would be unstable — a new message can move a conversation across the page
+  boundary — and an `_id` cursor does not describe that order at all. It returns
+  `{ items, nextCursor: null }` and stops at 50, rather than offering a cursor that could skip
+  a conversation.
+- **Message threads arrive newest first, like every other list, and are reversed for
+  display.** The cursor rule is the same `_id < cursor` on every endpoint; the thread is the
+  one place the natural reading order is the opposite, so `messagesInOrder` flips it once, at
+  render time.
+- **Search answers with two queries in a `try`.** A case-insensitive escaped-regex prefix
+  match on `username` gets the obvious case, and a `$text` query gets display-name words; the
+  results are merged and capped at 10. The `$text` half is wrapped so that a deployment whose
+  text index has not been built yet still answers over the prefix match instead of failing.
+  `GET /api/users/suggested` is an addition like explore was: `/explore` is meant to be
+  "search and suggested accounts", and the API reference defines no suggestion endpoint.
+- **The rail's suggestions are the same query the explore page runs.** Two lists of people
+  that could disagree is worse than one; the rail simply shows the first three and links on for
+  the rest. It is only fetched for a signed-in viewer, because the endpoint needs a session
+  and a guest would otherwise be bounced to the login screen by the 401 handler.
+- **Patching a cached post descends one level.** A repost card renders the original, not
+  itself, so a like pressed there has to land on the nested `repostOf` as well as on the post
+  id. `patchCachedPost` does both, which is what keeps the copy in the feed and the copy on
+  the permalink from drifting apart.
 
 ---
 
 ## Next phase
 
-Phase 4 (Advanced) adds reposts, bookmarks and the bookmarks list, notifications, direct
-messages over Socket.IO, search, the profile's Replies and Likes tabs, and the two action
-buttons PostCard still renders as `disabled`. Phase 5 is production: Docker, CI/CD and
-deployment.
+Phase 5 (Production) is Docker, CI/CD and deployment. The repository currently runs the two
+apps directly with `npm run dev`, which is what Phases 1 to 4 needed; nothing is
+containerised and no pipeline exists yet.
