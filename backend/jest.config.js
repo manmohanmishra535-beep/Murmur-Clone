@@ -10,6 +10,8 @@ module.exports = {
   collectCoverageFrom: [
     "controllers/**/*.js",
     "middleware/**/*.js",
+    "realtime/**/*.js",
+    "services/**/*.js",
     "utils/**/*.js",
     "validators/**/*.js",
   ],

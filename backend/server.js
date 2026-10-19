@@ -4,14 +4,16 @@ const http = require("http");
 const app = require("./app");
 const config = require("./config/env");
 const { connectDB, disconnectDB } = require("./config/db");
+const { attach } = require("./realtime/io");
 
 async function start() {
   config.assertConfig();
   await connectDB();
 
-  // Socket.IO attaches to this same HTTP server in Phase 4, so the server is
-  // created explicitly rather than through app.listen().
+  // Socket.IO runs on the same HTTP server as Express, so notifications and
+  // chat share the port and the CORS origin the REST API already uses.
   const server = http.createServer(app);
+  const io = attach(server);
 
   server.listen(config.port, () => {
     console.log(`[api] Murmur API listening on http://localhost:${config.port}`);
@@ -21,6 +23,7 @@ async function start() {
 
   const shutdown = async (signal) => {
     console.log(`[api] ${signal} received, shutting down.`);
+    io.close();
     server.close(async () => {
       await disconnectDB();
       process.exit(0);

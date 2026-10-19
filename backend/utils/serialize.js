@@ -57,9 +57,13 @@ function serializeAuthor(author) {
  * The like list stays behind; likedByMe, repostedByMe and bookmarkedByMe are
  * computed from the viewer so the client can render button states with no
  * extra round trips (see the API reference's create-post example).
+ *
+ * `reposted` is the set of post ids the viewer has reposted. There is no
+ * reposts array on Post (the docs' schema has only repostCount), so the caller
+ * resolves it in one query per page rather than one per post.
  */
 function serializePost(post, options = {}) {
-  const { viewer = null } = options;
+  const { viewer = null, reposted = null } = options;
   if (!post) return null;
 
   const doc = typeof post.toObject === "function" ? post.toObject() : post;
@@ -71,11 +75,19 @@ function serializePost(post, options = {}) {
   // A populated repostOf arrives as a document; an unpopulated one as an id.
   const repostOf =
     doc.repostOf && typeof doc.repostOf === "object" && doc.repostOf.author
-      ? serializePost(doc.repostOf, { viewer })
+      ? serializePost(doc.repostOf, { viewer, reposted })
       : null;
 
+  const id = String(doc._id);
+  const repostedIds = reposted ? Array.from(reposted, String) : [];
+
+  // "You have this reposted": true of the original, and true of a repost that
+  // carries it, so the button reads the same whichever one the feed showed.
+  const repostedByMe =
+    repostedIds.includes(id) || (repostOf ? repostedIds.includes(repostOf._id) : false);
+
   return {
-    _id: String(doc._id),
+    _id: id,
     author: serializeAuthor(doc.author),
     content: doc.content || "",
     images: Array.isArray(doc.images) ? doc.images.map(serializeImage) : [],
@@ -85,13 +97,9 @@ function serializePost(post, options = {}) {
     repostOf,
     editedAt: doc.editedAt || null,
     createdAt: doc.createdAt,
-    likedByMe: viewerId ? likes.some((id) => String(id) === viewerId) : false,
-    // Reposts arrive in Phase 4; the flag is part of the shape already so the
-    // client contract does not change when it does.
-    repostedByMe: false,
-    bookmarkedByMe: viewerId
-      ? bookmarks.some((id) => String(id) === String(doc._id))
-      : false,
+    likedByMe: viewerId ? likes.some((value) => String(value) === viewerId) : false,
+    repostedByMe,
+    bookmarkedByMe: viewerId ? bookmarks.some((value) => String(value) === id) : false,
   };
 }
 
@@ -100,4 +108,97 @@ function paginated(items, nextCursor, serialize = (item) => item) {
   return { items: items.map(serialize), nextCursor };
 }
 
-module.exports = { serializeUser, serializeAuthor, serializePost, serializeImage, paginated };
+/**
+ * One place that decides what a comment looks like over the wire.
+ * Shallow by design: a thread of 20 replies carries 20 authors, not 20 posts.
+ */
+function serializeComment(comment) {
+  const doc = typeof comment.toObject === "function" ? comment.toObject() : comment;
+  const post = doc.post && doc.post._id ? doc.post._id : doc.post;
+
+  return {
+    _id: String(doc._id),
+    post: post ? String(post) : "",
+    author: serializeAuthor(doc.author),
+    content: doc.content || "",
+    createdAt: doc.createdAt,
+  };
+}
+
+/**
+ * A notification row: who did it, what they did, and the post it happened on.
+ * The post travels in the same shallow shape a feed uses, so the row can show
+ * a preview and link straight to it.
+ */
+function serializeNotification(notification, options = {}) {
+  const { viewer = null } = options;
+  if (!notification) return null;
+
+  const doc =
+    typeof notification.toObject === "function" ? notification.toObject() : notification;
+  const post =
+    doc.post && typeof doc.post === "object" && doc.post._id
+      ? serializePost(doc.post, { viewer })
+      : null;
+
+  return {
+    _id: String(doc._id),
+    type: doc.type,
+    read: Boolean(doc.read),
+    actor: serializeAuthor(doc.actor),
+    post,
+    conversation: doc.conversation ? String(doc.conversation) : null,
+    createdAt: doc.createdAt,
+  };
+}
+
+/** A chat message: the sender travels shallow, like every other author. */
+function serializeMessage(message) {
+  const doc = typeof message.toObject === "function" ? message.toObject() : message;
+  const conversation =
+    doc.conversation && doc.conversation._id ? doc.conversation._id : doc.conversation;
+
+  return {
+    _id: String(doc._id),
+    conversation: conversation ? String(conversation) : "",
+    sender: serializeAuthor(doc.sender),
+    text: doc.text || "",
+    readAt: doc.readAt || null,
+    createdAt: doc.createdAt,
+  };
+}
+
+/**
+ * An inbox row. `other` is the participant who is not the viewer, resolved here
+ * so the client never has to filter the participants array itself.
+ */
+function serializeConversation(conversation, options = {}) {
+  const { viewerId = null } = options;
+  if (!conversation) return null;
+
+  const doc =
+    typeof conversation.toObject === "function" ? conversation.toObject() : conversation;
+  const participants = Array.isArray(doc.participants) ? doc.participants : [];
+  const other = participants.find((person) => String(person && person._id) !== String(viewerId));
+
+  return {
+    _id: String(doc._id),
+    participants: participants.map((person) => serializeAuthor(person)),
+    other: other ? serializeAuthor(other) : null,
+    lastMessage:
+      doc.lastMessage && doc.lastMessage._id ? serializeMessage(doc.lastMessage) : null,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+module.exports = {
+  serializeUser,
+  serializeAuthor,
+  serializePost,
+  serializeComment,
+  serializeNotification,
+  serializeMessage,
+  serializeConversation,
+  serializeImage,
+  paginated,
+};

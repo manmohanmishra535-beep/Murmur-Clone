@@ -1,5 +1,8 @@
 "use strict";
 
+const mongoose = require("mongoose");
+const AppError = require("./AppError");
+
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
@@ -22,9 +25,20 @@ function paginate(docs, limit) {
   return { items, nextCursor, hasMore };
 }
 
-/** Build the Mongo filter fragment for a cursor. */
+/**
+ * Build the Mongo filter fragment for a cursor. A cursor arrives as a query
+ * string, so it is checked before it reaches Mongo: a malformed one is bad
+ * input and gets the same 422 every other bad field gets, instead of a cast
+ * error that would surface as a 500.
+ */
 function cursorFilter(cursor) {
-  return cursor ? { _id: { $lt: cursor } } : {};
+  if (!cursor) return {};
+  if (!mongoose.isValidObjectId(cursor)) {
+    throw AppError.validation("That page cursor is not valid.", {
+      cursor: "Refresh the page and try again.",
+    });
+  }
+  return { _id: { $lt: cursor } };
 }
 
 module.exports = { DEFAULT_LIMIT, MAX_LIMIT, parseLimit, paginate, cursorFilter };

@@ -3,9 +3,9 @@
 A text-first microblogging app: a Next.js client and an Express REST API on MongoDB.
 Short posts, quiet interface.
 
-This repository contains the **foundation plus Phases 1 (Authentication) and 2 (Posts)**
-from the Murmur engineering docs, together with the design system from the Murmur design
-system v1.0 document.
+This repository contains the **foundation plus Phases 1 (Authentication), 2 (Posts), 3
+(Social) and 4 (Advanced)** from the Murmur engineering docs, together with the design
+system from the Murmur design system v1.0 document.
 
 ```
 twitter-clone/
@@ -57,6 +57,59 @@ The "done when" line for Phase 2 — *a post with an image appears on the author
 was verified over real HTTP in a browser against an in-memory MongoDB, with the Cloudinary
 upload stubbed because no credentials were available locally.
 
+### Phase 3 — Social (complete)
+
+| Deliverable | Where |
+| --- | --- |
+| Like and unlike a post, idempotent, `{ liked, likeCount }` | `backend/controllers/postController.js` |
+| `Comment` model in its own collection with `{ post: 1, createdAt: -1 }` | `backend/models/Comment.js` |
+| Add, list and delete comments on a post | `backend/controllers/commentController.js`, `routes/comments.js` |
+| Follow, unfollow, followers and following, both sides written together | `backend/controllers/userController.js` |
+| `commentCount` and `likeCount` moved with `$inc` in the same request | `controllers/postController.js`, `controllers/commentController.js` |
+| Home feed restricted to followed accounts plus yourself, newest first | `backend/controllers/postController.js` (`getFeed`) |
+| `GET /api/posts/explore` behind the home screen's "For you" tab | `backend/controllers/postController.js` |
+| Like wired into PostCard with `aria-pressed` and an updated label | `frontend/src/components/PostCard.jsx` |
+| Optimistic like with rollback, straight through the query cache | `frontend/src/hooks/usePostActions.js` |
+| Reply thread with its own composer, delete and pagination | `components/CommentForm.jsx`, `components/CommentList.jsx`, `pages/post/[id].jsx` |
+| Follow button on profiles and on every user row | `components/FollowButton.jsx`, `components/UserList.jsx` |
+| `/…/followers` and `/…/following` pages | `frontend/src/pages/[username]/followers.jsx`, `following.jsx` |
+
+The "done when" line for Phase 3 — *the home feed shows only followed users' posts, newest
+first* — is covered by the API tests (the feed after following, and again after unfollowing)
+and by a 26-check run over real HTTP against the running API and an in-memory MongoDB, which
+drove two accounts through register → post → follow → feed → like → reply → delete →
+unfollow. The browser itself could not be used for this pass: the browser surface here never
+becomes visible, so the page never hydrates. The UI is therefore covered by the production
+build, the linter and the component-free lib tests rather than by clicking.
+
+### Phase 4 — Advanced (complete)
+
+| Deliverable | Where |
+| --- | --- |
+| Repost and un-repost, one per account per post, `repostOf` on a real `Post` | `backend/controllers/postController.js` |
+| Bookmark and un-bookmark, plus `GET /api/posts/bookmarks` | `controllers/postController.js` |
+| `Notification` model with the documented compound index | `backend/models/Notification.js` |
+| Notification rows for like, reply, follow, repost and message, never for your own action | `backend/utils/notify.js` |
+| `GET /api/notifications`, `unread-count`, `PATCH /read` | `backend/controllers/notificationController.js` |
+| `Conversation` and `Message` models with their indexes | `backend/models/Conversation.js`, `Message.js` |
+| Inbox, open-or-create a conversation, paged thread, send a message | `backend/controllers/messageController.js`, `services/conversationService.js` |
+| `GET /api/users/search` (prefix plus text index) and `GET /api/users/suggested` | `backend/controllers/userController.js` |
+| Socket.IO on the API's own HTTP server, authenticated by the same JWT cookie | `backend/realtime/io.js` |
+| Live pushes: `notification:new`, `notification:remove`, `message:new`, `post:counts`, `typing:start`/`typing:stop` | `backend/realtime/emitter.js`, `controllers/*` |
+| One socket per session behind `SocketProvider`, opening on login and closing on logout | `frontend/src/context/SocketContext.jsx` |
+| Push handlers that write into the React Query cache, so nothing refetches | `context/SocketContext.jsx`, `lib/notifications.js`, `lib/messages.js` |
+| Infinite scroll extended to bookmarks, notifications and message threads | `hooks/useFeed.js`, `hooks/useNotifications.js`, `hooks/useMessages.js` |
+| Repost and bookmark wired into PostCard as real toggles | `components/PostCard.jsx`, `hooks/usePostActions.js` |
+| `/explore`, `/notifications`, `/messages`, `/messages/[id]`, `/bookmarks` | `frontend/src/pages/*` |
+| Unread count badge, drawn by `NavItem` and read from the shared count query | `hooks/useNotifications.js`, `components/Sidebar.jsx`, `BottomBar.jsx`, `NavItem.jsx` |
+
+The Phase 4 "done when" line — *a like triggers a live notification without a page
+refresh* — is the centre of `backend/tests/advanced.test.js`, which starts a real HTTP
+server with Socket.IO attached, signs two accounts in over REST, then likes as one and
+asserts the `notification:new` frame arrives at the other's socket with the same payload
+the list endpoint returns. The same check runs again against the real `server.js` in the
+end-to-end pass below.
+
 ### Design system (complete)
 
 `tokens.css` and `tailwind.config.js` are the delivered files; Tailwind reads the same
@@ -71,14 +124,14 @@ component, the layout rules and the do/don't list. It includes a theme switcher.
 
 ### Deliberately not built yet
 
-Phases 3 to 5: comments and replies, likes, reposts, bookmarks, the follow graph,
-notifications, direct messages, search, `GET /api/posts/explore`, the following timeline,
-Socket.IO, Docker and CI.
+Phase 5: Docker, CI/CD and deployment.
 
-PostCard already draws the like, repost and bookmark buttons, but on real posts they are
-`disabled` with a phase-labelled label instead of pretending to work — only `/design` uses
-the interactive fake counters. The placeholder screens say which phase each belongs to,
-and the navigation is complete so nothing dead-ends.
+Three things are honest about their limits rather than faking data. The profile's **Replies**
+and **Likes** tabs stay empty: the API reference defines no "this account's replies" or
+"posts this account liked" endpoint, so neither can be filled from what the docs specify.
+The rail's **Trends** block says the same — there is no trending endpoint, so it shows no
+numbers rather than invented ones. Both are labelled in the UI, and the navigation is
+complete so nothing dead-ends.
 
 ---
 
@@ -188,24 +241,76 @@ All routes are under `/api` and speak JSON. Errors always use
 | GET | `/api/auth/me` | yes | `200 { user }` |
 | GET | `/api/users/:username` | optional | Public profile with counts and `isFollowing` |
 | PATCH | `/api/users/me` | yes | multipart: `displayName`, `bio`, `image` |
+| POST | `/api/users/:id/follow` | yes | `200 { following: true }`, idempotent |
+| DELETE | `/api/users/:id/follow` | yes | `200 { following: false }`, idempotent |
+| GET | `/api/users/:id/followers` | optional | Paged user rows, each with `isFollowing` |
+| GET | `/api/users/:id/following` | optional | Paged user rows, each with `isFollowing` |
 | POST | `/api/posts` | yes | multipart: `content` plus up to 4 `images` → `201` and a bare post |
 | GET | `/api/posts/feed` | yes | The home feed: your posts plus the people you follow |
+| GET | `/api/posts/explore` | yes | Newest posts from everyone |
 | GET | `/api/posts/user/:username` | optional | That author's posts, newest first |
 | GET | `/api/posts/:id` | optional | A single post, for shared links |
 | PATCH | `/api/posts/:id` | yes, owner | JSON `content` → `200`, sets `editedAt` |
-| DELETE | `/api/posts/:id` | yes, owner | `204`, and its Cloudinary images go with it |
+| DELETE | `/api/posts/:id` | yes, owner | `204`, with its Cloudinary images and its replies |
+| POST | `/api/posts/:id/like` | yes | `200 { liked: true, likeCount }`, idempotent |
+| DELETE | `/api/posts/:id/like` | yes | `200 { liked: false, likeCount }`, idempotent |
+| POST | `/api/posts/:id/repost` | yes | JSON `content` optional → `201` with the new post, `200` if you already reposted |
+| DELETE | `/api/posts/:id/repost` | yes | `204`, idempotent; the id may be the original or your repost |
+| POST | `/api/posts/:id/bookmark` | yes | `200 { bookmarked: true }`, idempotent |
+| DELETE | `/api/posts/:id/bookmark` | yes | `200 { bookmarked: false }`, idempotent |
+| GET | `/api/posts/bookmarks` | yes | The viewer's saved posts, paged |
+| POST | `/api/posts/:id/comments` | yes | JSON `content` → `201` and a bare comment |
+| GET | `/api/posts/:id/comments` | optional | Paged replies, newest first |
+| DELETE | `/api/comments/:id` | yes, owner | `204`, and `commentCount` moves back |
+| GET | `/api/notifications` | yes | Paged rows, newest first |
+| GET | `/api/notifications/unread-count` | yes | `200 { count }` |
+| PATCH | `/api/notifications/read` | yes | `204`, marks everything read |
+| GET | `/api/conversations` | yes | The inbox, most recently active first, capped at 50 |
+| POST | `/api/conversations` | yes | JSON `userId` → `200` with the existing conversation or a new one |
+| GET | `/api/conversations/:id/messages` | yes, participant | Paged messages, newest first |
+| POST | `/api/conversations/:id/messages` | yes, participant | JSON `text` → `201` and a bare message |
+| GET | `/api/users/search?q=` | optional | Up to 10 accounts matching a username prefix or display name |
+| GET | `/api/users/suggested` | yes | Up to 10 accounts the viewer does not follow, most followed first |
 
-**Response shapes.** Post lists are `{ items, nextCursor }`, where `nextCursor` is the last
-`_id` or `null`. A single post is returned bare rather than wrapped in `{ post }`, which is
+**Response shapes.** Post lists, comment lists, user lists, notification lists, the inbox and
+message threads are all `{ items, nextCursor }`, where `nextCursor` is the last `_id` or
+`null`. The inbox is the one exception in what `nextCursor` means — its order is by activity,
+not by insertion, so it returns `nextCursor: null` and simply stops at 50 rather than offering
+a cursor that could skip a conversation. A single post, a single comment and a single message
+are returned bare rather than wrapped in `{ post }` / `{ comment }` / `{ message }`, which is
 what the engineering docs show — this is the one place the API departs from the `{ user }`
 wrapper that the Phase 1 auth routes use.
 
 Every post carries `likedByMe`, `repostedByMe` and `bookmarkedByMe`, computed per request.
-Those three are always `false` in Phase 2 because the endpoints that would set them are
-Phase 3; the fields exist now so the client does not have to change later.
+All three are live as of Phase 4: `repostedByMe` is resolved with one query per page, and it
+reads `true` for the original *and* for a repost of it, so the repost button looks the same
+wherever the viewer meets the post.
 
-Status codes in use: `400`, `401`, `403`, `404`, `409` (`ALREADY_EXISTS`), `413`, `422`
-(`VALIDATION_FAILED`), `429` (`RATE_LIMITED`), `500`.
+### Socket.IO events
+
+The socket carries live pushes and one client-to-server write. Everything that changes data
+goes over REST, so there is only ever one code path that writes.
+
+| Event | Direction | Payload |
+| --- | --- | --- |
+| `notification:new` | server → client | a full notification row, same shape as the list |
+| `notification:remove` | server → client | `{ _id, read }` — the row to drop, and whether the badge should move |
+| `message:new` | server → client | a full message, same shape as the thread |
+| `message:send` | client → server | `{ conversationId, text }`, acked with `{ ok: true, message }` or `{ ok: false, error }` |
+| `typing:start` / `typing:stop` | both | `{ conversationId }`, forwarded to the other participant only |
+| `post:counts` | server → client | `{ postId, likeCount, commentCount, repostCount }` for the author's own post |
+
+`notification:remove` is an addition to the docs' event table. The docs ask that unliking
+remove the like notification; without a removal event an open notifications screen would keep
+showing a row the server had already deleted. The `read` flag travels with it so a client
+knows whether to decrement the badge or just drop the row.
+
+The handshake carries the same httpOnly `token` cookie the REST API uses — no second
+credential, no token in a query string — and each socket joins a room named after its user
+id, so a push to one person is `io.to(userId)`.
+
+Status codes in use: `400` (`SELF_FOLLOW`, `SELF_CONVERSATION`), `401`, `403`, `404`,
+`409` (`ALREADY_EXISTS`), `413`, `422` (`VALIDATION_FAILED`), `429` (`RATE_LIMITED`), `500`.
 
 ### Validation rules
 
@@ -219,6 +324,9 @@ Status codes in use: `400`, `401`, `403`, `404`, `409` (`ALREADY_EXISTS`), `413`
 | `image` | JPEG, PNG, WebP or GIF, up to 5 MB |
 | `post.content` | 1 to 280 characters after trimming, or empty when an image is attached |
 | post images | 1 to 4 files, JPEG, PNG, WebP or GIF, up to 5 MB each |
+| `comment.content` | 1 to 280 characters after trimming, always required |
+| `limit` | 1 to 50, defaulting to 20 on every list endpoint |
+| `cursor` | a post/comment/user `_id`; a malformed one is a 422, never a 500 |
 
 ---
 
@@ -231,11 +339,14 @@ on `username` and `displayName` for Phase 4 search.
 
 `Post` matches the engineering docs: `author`, `content`, `images[]` (`{ url, publicId }`),
 `likes[]`, `likeCount`, `commentCount`, `repostCount`, `repostOf`, `createdAt` and
-`editedAt`, with `{ author: 1, createdAt: -1 }` and `{ createdAt: -1 }` indexes. The
-`likeCount` and `commentCount` denormalised counters are on the document from the start,
-even though only Phase 3 will write them.
+`editedAt`, with `{ author: 1, createdAt: -1 }` and `{ createdAt: -1 }` indexes.
 
-`Comment`, `Notification`, `Conversation` and `Message` arrive with their phases.
+`Comment` matches the engineering docs: `post`, `author`, `content`, with the
+`{ post: 1, createdAt: -1 }` index that serves the thread. Comments live in their own
+collection rather than inside the post, so a post with thousands of replies never grows the
+post document; `Post.commentCount` is the denormalised count kept beside it.
+
+`Notification`, `Conversation` and `Message` arrive with Phase 4.
 
 ---
 
@@ -261,8 +372,8 @@ npm --prefix backend test      # Jest + Supertest + mongodb-memory-server
 npm --prefix frontend test     # Jest on the pure lib modules
 ```
 
-Backend: 63 tests. Authentication (33): register (success, 422 field errors, 409 for
-username and email, lowercase normalisation, hashing), login (success, 401 twice, 422),
+Backend: 116 tests. Authentication and profiles (33): register (success, 422 field errors, 409
+for username and email, lowercase normalisation, hashing), login (success, 401 twice, 422),
 `/auth/me` (401 without a cookie, 401 for a tampered token, 200 with one), logout, the
 health check, profile read (public, owner-only email, 404), profile edit (success, 422 for
 bio and display name, rejected non-image upload), plus unit tests for token helpers, the
@@ -272,15 +383,31 @@ cleanup when a later upload fails, read and 404s, the public read paths, the use
 with cursor pagination that new posts cannot shift, limit clamping, the feed, owner-only
 edit with `editedAt`, delete with Cloudinary teardown, 403s, and the profile post count.
 
-Frontend: 51 tests over the pure modules — `compactNumber`, `relativeTime`,
+Social (53): likes (the documented shape, the counter moving with the `likes` array and the
+array never leaking, idempotent double tap, several accounts, 404, unlike, the counter never
+reading below zero, and other people's likes left alone); comments (auth, the documented
+201 shape, `commentCount` moving in both directions, 422 for empty and over-length text, 404
+for a missing post, newest-first listing, public reads, cursor pagination, owner-only delete,
+403 for someone else's reply, and a post's replies leaving with the post); follows
+(idempotent both ways, both sides of the relationship written, `SELF_FOLLOW`, 404,
+`isFollowing` on the profile); follower and following lists (row flags, real counts, public
+reads, cursor pagination, 404, and a deleted account dropping out of a list rather than
+leaving a hole); the feed (followed accounts plus yourself, newest first, unfollowing
+removing their posts again, per-viewer flags on one post, and one account's feed never
+leaking into another's); explore; and cursor hygiene (a malformed cursor is a 422 on every
+list endpoint instead of a 500).
+
+Frontend: 67 tests over the pure modules — `compactNumber`, `relativeTime`,
 `joinedDate`, the client-side validators, the composer counter maths and `isPostable` with
 images, the image type/size/batch rules, the Cloudinary transform helper, the post list
-helpers (`flattenPages`, `isOwnPost`, `withoutPost`), and the share helper's sheet,
-clipboard, cancellation and failure paths.
+helpers (`flattenPages`, `isOwnPost`, `withoutPost`, `withLike`, `withCommentCount`,
+`withoutComment`, `withFollow`, `canFollow`), and the share helper's sheet, clipboard,
+cancellation and failure paths.
 
-Component tests with React Testing Library and the Playwright end-to-end flow are
-scheduled with Phase 2, when PostCard and the feed become real; the lib tests above are
-the pieces that already exist.
+Component tests with React Testing Library and the Playwright end-to-end flow are still not
+part of `npm test`: the Jest config only collects `src/**/*.test.js`, and the browser surface
+in this environment cannot complete hydration, so the UI is verified by the production
+build, the linter and a 26-check end-to-end run over real HTTP against the running API.
 
 ---
 
@@ -332,8 +459,46 @@ the pieces that already exist.
   not wrapped in a single `router.use(requireAuth)`.
 - **The home feed exists in Phase 2.** The docs schedule the home feed with Phase 3, but
   without it writing a post would be a dead end. It reads
-  `authors = [...req.user.following, req.user._id]`, which simply degenerates to your own
-  posts until the follow graph arrives, and needs no change then.
+  `authors = [...req.user.following, req.user._id]`, which degenerated to your own posts
+  until the follow graph arrived and needs no change now that it has.
+- **Likes are idempotent on both verbs.** `POST` and `DELETE /like` answer `200` with
+  `{ liked, likeCount }` whatever the previous state was. `$addToSet` and `$pull` guard the
+  array so a retry can never add the same account twice, `$inc` moves the denormalised
+  counter in the same write, and the count handed back is re-read after the write so the
+  client never displays a guess of its own.
+- **Following writes both sides and refuses a self-follow.** The follower's `following` and
+  the followed account's `followers` are updated with `$addToSet` in one `Promise.all`, so
+  the two lists cannot drift and a double tap is harmless. Following yourself is a `400
+  SELF_FOLLOW` rather than a write that is silently dropped.
+- **Threads and follower lists are readable signed out.** Same reasoning as posts and
+  profiles: `/post/[id]` is a public route, and the follower list hangs off a public
+  profile, so `GET /api/posts/:id/comments` and both user lists use `optionalAuth`.
+  `isFollowing` is filled in per row only when a session is present.
+- **A malformed cursor is a 422, not a 500.** `cursorFilter` checks the query-string value
+  with `mongoose.isValidObjectId` before it reaches Mongo. A cursor is client input like any
+  other field, and the docs' pipeline says bad input is a `422`.
+- **`$in` and `$lt` cannot share one `_id` object in Mongoose.** Paging a follower list
+  needs both "these member ids" and "before this cursor"; written as a single object,
+  Mongoose throws `Can't use _id`. They are two conditions inside an `$and` instead.
+- **Like state lives in the query cache, not in PostCard.** Phase 2 kept a local copy of
+  `liked`/`likeCount`, which went stale as soon as the `post` prop changed.
+  `patchCachedPost` writes the optimistic like into every list and into the single-post
+  cache, so the same post shown in a feed and on its permalink cannot disagree, and a failed
+  request restores a snapshot. Only the `demo` specimen keeps local counters, because it has
+  no server behind it.
+- **The reply action does two different things.** In a list the reply count is a real
+  `<Link>` to `/post/[id]`, so it can be middle-clicked; on the permalink it is a button
+  that puts the caret in the reply box.
+- **Following is the home screen's default tab.** The docs describe the home screen as "For
+  you" and "Following", and the Phase 3 "done when" line is about followed accounts, so
+  Following opens first.
+- **Explore arrives a phase early.** `GET /api/posts/explore` is listed in the API
+  reference's Posts module, and the home screen has had a "For you" tab since Phase 1.
+  Leaving that tab as a placeholder while it is the default view was worse than shipping the
+  one cursor query behind it. Search is still a Phase 4 item and is still not built.
+- **Deleting a post deletes its replies.** `Comment.deleteMany({ post })` runs beside
+  `post.deleteOne()`, so a deleted post never leaves an orphaned thread. Notifications join
+  that cascade in Phase 4.
 - **Post images are forced to 16:9.** Cloudinary's transform is
   `w_1200,ar_16:9,c_fill,g_auto,q_auto,f_auto` (`POST_IMAGE_TRANSFORM`), so the media slot
   has exactly one shape at every breakpoint and `<Image width={1200} height={675}>` is
@@ -368,6 +533,7 @@ the pieces that already exist.
 
 ## Next phase
 
-Phase 3 adds comments and replies, the follow graph, likes, reposts and bookmarks with
-their endpoints, notifications, and the search and explore reads — then wires the counters
-that Phase 2 left `disabled` in PostCard and the tabs that already exist on the profile.
+Phase 4 (Advanced) adds reposts, bookmarks and the bookmarks list, notifications, direct
+messages over Socket.IO, search, the profile's Replies and Likes tabs, and the two action
+buttons PostCard still renders as `disabled`. Phase 5 is production: Docker, CI/CD and
+deployment.

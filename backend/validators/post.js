@@ -47,4 +47,19 @@ const updatePostRules = [
     .withMessage("Write something to save."),
 ];
 
-module.exports = { POST_MAX, createPostRules, updatePostRules };
+/**
+ * POST /api/posts/:id/repost - a repost may carry a comment, or nothing at all,
+ * so content is optional here where createPostRules requires text or an image.
+ */
+const repostRules = [
+  body("content")
+    .optional({ values: "null" })
+    .isString()
+    .withMessage("Write your repost as plain text.")
+    .bail()
+    .trim()
+    .isLength({ max: POST_MAX })
+    .withMessage(`Keep your repost to ${POST_MAX} characters.`),
+];
+
+module.exports = { POST_MAX, createPostRules, updatePostRules, repostRules };
