@@ -10,6 +10,7 @@ import Tabs from "@/components/Tabs";
 import EmptyState from "@/components/EmptyState";
 import Skeleton from "@/components/Skeleton";
 import PostList from "@/components/PostList";
+import FollowButton from "@/components/FollowButton";
 import { BookmarkIcon, PencilIcon, ReplyIcon, UserIcon } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserPosts } from "@/hooks/useFeed";
@@ -117,7 +118,9 @@ export default function ProfilePage() {
                 Edit profile
               </Button>
             </Link>
-          ) : null}
+          ) : (
+            <FollowButton user={profile} size="md" />
+          )}
         </div>
 
         <h2 className="mt-3 font-display text-2xl font-semibold leading-tight text-ink">
@@ -140,18 +143,18 @@ export default function ProfilePage() {
             </b>{" "}
             posts
           </span>
-          <span>
+          <Link href={`/${profile.username}/following`} className="hover:underline">
             <b className="font-semibold text-ink tabular">
               {compactNumber(profile.followingCount)}
             </b>{" "}
             following
-          </span>
-          <span>
+          </Link>
+          <Link href={`/${profile.username}/followers`} className="hover:underline">
             <b className="font-semibold text-ink tabular">
               {compactNumber(profile.followerCount)}
             </b>{" "}
             followers
-          </span>
+          </Link>
         </p>
       </section>
 
@@ -182,14 +185,15 @@ export default function ProfilePage() {
       ) : null}
 
       {tab === "replies" ? (
-        <EmptyState icon={ReplyIcon} title="No replies yet">
-          Comments and replies arrive in Phase 3.
+        <EmptyState icon={ReplyIcon} title="Replies are not listed here yet">
+          The thread under each post is live now, but a profile-wide reply
+          timeline is not part of the API yet.
         </EmptyState>
       ) : null}
 
       {tab === "likes" ? (
-        <EmptyState icon={BookmarkIcon} title="No liked posts to show">
-          Likes are private by default, and the tab fills in with Phase 3.
+        <EmptyState icon={BookmarkIcon} title="Likes stay private">
+          Liked posts are not listed on a profile, so this tab stays empty.
         </EmptyState>
       ) : null}
     </>

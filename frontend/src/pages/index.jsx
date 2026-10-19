@@ -6,10 +6,10 @@ import Composer from "@/components/Composer";
 import PostList from "@/components/PostList";
 import EmptyState from "@/components/EmptyState";
 import Skeleton from "@/components/Skeleton";
-import { HomeIcon, UsersIcon } from "@/components/icons";
+import { SearchIcon, UsersIcon } from "@/components/icons";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useToast } from "@/hooks/useToast";
-import { useFeed } from "@/hooks/useFeed";
+import { useExplore, useFeed } from "@/hooks/useFeed";
 import { usePostActions } from "@/hooks/usePostActions";
 import { errorFields, errorMessage } from "@/services/api";
 
@@ -18,12 +18,15 @@ export default function HomePage() {
   const { toast } = useToast();
   const { createPost } = usePostActions();
 
-  const [tab, setTab] = useState("for-you");
+  // Following is the default because it is the feed the delivery table asks
+  // for: only the accounts you follow, plus yourself, newest first.
+  const [tab, setTab] = useState("following");
   const [draft, setDraft] = useState("");
   const [images, setImages] = useState([]);
   const [publishing, setPublishing] = useState(false);
 
-  const feed = useFeed({ enabled: ready });
+  const feed = useFeed({ enabled: ready && tab === "following" });
+  const explore = useExplore({ enabled: ready && tab === "for-you" });
 
   async function publish() {
     if (publishing) return;
@@ -77,21 +80,27 @@ export default function HomePage() {
 
           {tab === "for-you" ? (
             <PostList
-              query={feed}
+              query={explore}
               viewerId={user._id}
-              label="Your feed"
+              label="Everyone's newest posts"
               empty={
-                <EmptyState icon={HomeIcon} title="Your feed is quiet">
-                  Nothing here yet. Write the first post above, and it lands here
-                  straight away.
+                <EmptyState icon={SearchIcon} title="No posts yet">
+                  When anyone posts, the newest ones show up here.
                 </EmptyState>
               }
             />
           ) : (
-            <EmptyState icon={UsersIcon} title="Nothing from people you follow">
-              Following arrives in Phase 3. Until then, For you shows your own posts,
-              newest first.
-            </EmptyState>
+            <PostList
+              query={feed}
+              viewerId={user._id}
+              label="Your feed"
+              empty={
+                <EmptyState icon={UsersIcon} title="Your feed is quiet">
+                  Nothing here yet. Write the first post above, and it lands here
+                  straight away. Following people adds their posts to this feed.
+                </EmptyState>
+              }
+            />
           )}
         </>
       ) : (

@@ -24,10 +24,10 @@ function PostSkeleton() {
 }
 
 /**
- * Renders an infinite query of posts, wiring the actions that exist in Phase 2
- * (edit, delete, share) and the sentinel that loads the next page 400px before
- * the visitor reaches it. Every list of posts goes through here, so the wiring
- * lives in one place.
+ * Renders an infinite query of posts, wiring the actions that exist today
+ * (like, edit, delete, share, open the thread) and the sentinel that loads the
+ * next page 400px before the visitor reaches it. Every list of posts goes
+ * through here, so the wiring lives in one place.
  */
 export default function PostList({
   query,
@@ -36,7 +36,7 @@ export default function PostList({
   label = "Posts",
   className,
 }) {
-  const { updatePost, deletePost } = usePostActions();
+  const { updatePost, deletePost, toggleLike } = usePostActions();
   const { toast } = useToast();
 
   const posts = flattenPages(query.data);
@@ -93,6 +93,8 @@ export default function PostList({
               post={post}
               viewerId={viewerId}
               priority={index === 0}
+              replyHref={`/post/${post._id}`}
+              onLike={toggleLike}
               onShare={share}
               onEdit={updatePost}
               onDelete={deletePost}

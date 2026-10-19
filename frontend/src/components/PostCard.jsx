@@ -29,7 +29,34 @@ function ActionButton({
   onClick,
   pressed,
   disabled = false,
+  href,
 }) {
+  const className = clsx(
+    "-ml-2 flex h-11 min-w-11 items-center gap-1.5 rounded-pill px-2 text-sm tabular transition-colors duration-fast ease-out",
+    active ? activeColor : "text-ink-3",
+    !active && !disabled && "hover:bg-surface-2 hover:text-ink",
+    disabled && "cursor-not-allowed opacity-70"
+  );
+
+  const content = (
+    <>
+      <span className={clsx("grid place-items-center", pop && "animate-like-pop")}>
+        <Icon size={18} filled={iconFilled} />
+      </span>
+      {count != null ? <span>{count > 0 ? compactNumber(count) : ""}</span> : null}
+    </>
+  );
+
+  // The reply action navigates to the thread, so it is a real link: it can be
+  // middle-clicked and opened in a new tab, unlike a button that pushes.
+  if (href) {
+    return (
+      <Link href={href} aria-label={label} className={className}>
+        {content}
+      </Link>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -38,17 +65,9 @@ function ActionButton({
       aria-label={label}
       disabled={disabled}
       title={disabled ? label : undefined}
-      className={clsx(
-        "-ml-2 flex h-11 min-w-11 items-center gap-1.5 rounded-pill px-2 text-sm tabular transition-colors duration-fast ease-out",
-        active ? activeColor : "text-ink-3",
-        !active && !disabled && "hover:bg-surface-2 hover:text-ink",
-        disabled && "cursor-not-allowed opacity-70"
-      )}
+      className={className}
     >
-      <span className={clsx("grid place-items-center", pop && "animate-like-pop")}>
-        <Icon size={18} filled={iconFilled} />
-      </span>
-      {count != null ? <span>{count > 0 ? compactNumber(count) : ""}</span> : null}
+      {content}
     </button>
   );
 }
@@ -59,8 +78,10 @@ function ActionButton({
  * buttons with aria-pressed and an updated label, and never use the accent
  * colour.
  *
- * `demo` keeps the local, optimistic toggles for the design-system specimen.
- * A real post has no like endpoint until Phase 3, so those actions render as
+ * A real post reads its like state and counts straight from the `post` prop,
+ * because the query cache is what the optimistic write updates; only the
+ * design-system specimen (`demo`) keeps its own copy, since it has no server.
+ * Repost and bookmark are Phase 4, so outside the specimen they render as
  * disabled with a label that says so rather than pretending to work.
  */
 export default function PostCard({
@@ -68,6 +89,7 @@ export default function PostCard({
   viewerId,
   demo = false,
   priority = false,
+  replyHref,
   onLike,
   onRepost,
   onBookmark,
@@ -77,12 +99,18 @@ export default function PostCard({
   onDelete,
   className,
 }) {
-  const [liked, setLiked] = useState(Boolean(post.likedByMe));
-  const [likeCount, setLikeCount] = useState(post.likeCount || 0);
-  const [reposted, setReposted] = useState(Boolean(post.repostedByMe));
-  const [repostCount, setRepostCount] = useState(post.repostCount || 0);
-  const [bookmarked, setBookmarked] = useState(Boolean(post.bookmarkedByMe));
+  const [demoLiked, setDemoLiked] = useState(Boolean(post.likedByMe));
+  const [demoLikeCount, setDemoLikeCount] = useState(post.likeCount || 0);
+  const [demoReposted, setDemoReposted] = useState(Boolean(post.repostedByMe));
+  const [demoRepostCount, setDemoRepostCount] = useState(post.repostCount || 0);
+  const [demoBookmarked, setDemoBookmarked] = useState(Boolean(post.bookmarkedByMe));
   const [pop, setPop] = useState(false);
+
+  const liked = demo ? demoLiked : Boolean(post.likedByMe);
+  const likeCount = demo ? demoLikeCount : post.likeCount || 0;
+  const reposted = demo ? demoReposted : Boolean(post.repostedByMe);
+  const repostCount = demo ? demoRepostCount : post.repostCount || 0;
+  const bookmarked = demo ? demoBookmarked : Boolean(post.bookmarkedByMe);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -126,21 +154,26 @@ export default function PostCard({
 
   function toggleLike() {
     const next = !liked;
-    setLiked(next);
-    setLikeCount((count) => Math.max(0, count + (next ? 1 : -1)));
     if (next) setPop(true);
-    onLike?.(next, post);
+
+    // The specimen has no server, so it keeps its own optimistic copy. A real
+    // post is updated in the cache by the page and re-renders from the prop.
+    if (demo) {
+      setDemoLiked(next);
+      setDemoLikeCount((count) => Math.max(0, count + (next ? 1 : -1)));
+    }
+    onLike?.(post);
   }
 
   function toggleRepost() {
     const next = !reposted;
-    setReposted(next);
-    setRepostCount((count) => Math.max(0, count + (next ? 1 : -1)));
+    setDemoReposted(next);
+    setDemoRepostCount((count) => Math.max(0, count + (next ? 1 : -1)));
     onRepost?.(next, post);
   }
 
   function toggleBookmark() {
-    setBookmarked((value) => !value);
+    setDemoBookmarked((value) => !value);
     onBookmark?.(!bookmarked, post);
   }
 
@@ -385,9 +418,16 @@ export default function PostCard({
         <footer className="mt-2 flex max-w-md items-center justify-between">
           <ActionButton
             icon={ReplyIcon}
-            label={onReply ? "Reply" : "Reply, available in Phase 3"}
+            label={
+              demo || replyHref || onReply
+                ? `Reply to @${author.username}${
+                    post.commentCount ? `, ${compactNumber(post.commentCount)} replies` : ""
+                  }`
+                : "Reply, not available here"
+            }
             count={post.commentCount}
-            disabled={!onReply}
+            href={replyHref}
+            disabled={!demo && !replyHref && !onReply}
             onClick={() => onReply?.(post)}
           />
           <ActionButton
@@ -408,18 +448,14 @@ export default function PostCard({
           />
           <ActionButton
             icon={HeartIcon}
-            label={
-              demo
-                ? `${liked ? "Unlike" : "Like"}${likeCount ? `, ${compactNumber(likeCount)} likes` : ""}`
-                : "Like, available in Phase 3"
-            }
+            label={`${liked ? "Unlike" : "Like"}${likeCount ? `, ${compactNumber(likeCount)} likes` : ""}`}
             count={likeCount}
             active={liked}
             activeColor="text-like"
             iconFilled={liked}
             pop={pop}
             pressed={liked}
-            disabled={!demo}
+            disabled={!demo && !onLike}
             onClick={toggleLike}
           />
           <ActionButton

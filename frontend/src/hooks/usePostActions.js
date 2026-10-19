@@ -2,13 +2,15 @@ import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { postService } from "@/services/postService";
 import { errorMessage } from "@/services/api";
-import { withoutPost } from "@/lib/posts";
+import { withoutPost, withLike } from "@/lib/posts";
 import { useToast } from "./useToast";
 
-/** Every cached list that holds posts: the feed and each profile timeline. */
+/** Every cached list that holds posts: the feed, Explore and each timeline. */
 function isPostList(query) {
   const [first, second] = query.queryKey;
-  return first === "feed" || (first === "posts" && second === "user");
+  if (first === "feed") return true;
+  if (first !== "posts") return false;
+  return second === "explore" || second === "user";
 }
 
 function mapLists(queryClient, mapper) {
@@ -31,8 +33,27 @@ function restoreLists(queryClient, snapshots) {
 }
 
 /**
- * Create, edit and delete with the UI updated first and rolled back if the
- * request fails (like, repost and bookmark join this hook in Phase 3/4).
+ * Overlays new fields on one post wherever it is cached: in every list, and in
+ * the single-post cache the permalink page reads. The cache is the source of
+ * truth, so two views of the same post can never drift apart.
+ */
+export function patchCachedPost(queryClient, postId, updater) {
+  mapLists(queryClient, (items) =>
+    items.map((post) => (post._id === postId ? updater(post) : post))
+  );
+
+  const single = queryClient.getQueryData(["post", postId]);
+  if (single !== undefined) queryClient.setQueryData(["post", postId], updater(single));
+}
+
+/** The single-post cache, or undefined when the permalink is not open. */
+function snapshotPost(queryClient, postId) {
+  return queryClient.getQueryData(["post", postId]);
+}
+
+/**
+ * Every write that changes a post, with the UI updated first and rolled back
+ * if the request fails. Repost and bookmark join this hook in Phase 4.
  */
 export function usePostActions() {
   const queryClient = useQueryClient();
@@ -58,6 +79,7 @@ export function usePostActions() {
       });
 
       queryClient.invalidateQueries({ queryKey: ["feed"] });
+      queryClient.invalidateQueries({ queryKey: ["posts", "explore"] });
       queryClient.invalidateQueries({ queryKey: ["posts", "user", post.author.username] });
       refreshProfiles();
 
@@ -81,16 +103,21 @@ export function usePostActions() {
   const deletePost = useCallback(
     async (post) => {
       const snapshots = snapshotLists(queryClient);
+      const single = snapshotPost(queryClient, post._id);
+
       queryClient.setQueriesData({ predicate: isPostList }, (data) => withoutPost(data, post._id));
 
       try {
         await postService.remove(post._id);
         queryClient.removeQueries({ queryKey: ["post", post._id] });
+        // A deleted post takes its thread with it.
+        queryClient.removeQueries({ queryKey: ["comments", post._id] });
         queryClient.invalidateQueries({ queryKey: ["posts", "user", post.author?.username] });
         refreshProfiles();
         toast("Post deleted.", { variant: "success" });
       } catch (error) {
         restoreLists(queryClient, snapshots);
+        if (single !== undefined) queryClient.setQueryData(["post", post._id], single);
         toast(errorMessage(error, "Could not delete that post."), { variant: "error" });
         throw error;
       }
@@ -98,5 +125,37 @@ export function usePostActions() {
     [queryClient, refreshProfiles, toast]
   );
 
-  return { createPost, updatePost, deletePost };
+  /**
+   * Like and unlike. The heart fills on the tap and the server's count wins
+   * when the response lands, because another account may have liked the same
+   * post in between. A failure puts the previous state back.
+   */
+  const toggleLike = useCallback(
+    async (post) => {
+      const id = post._id;
+      const next = !post.likedByMe;
+      const snapshots = snapshotLists(queryClient);
+      const single = snapshotPost(queryClient, id);
+
+      patchCachedPost(queryClient, id, (item) => withLike(item, next));
+
+      try {
+        const result = next ? await postService.like(id) : await postService.unlike(id);
+        patchCachedPost(queryClient, id, (item) => ({
+          ...item,
+          likedByMe: result.liked,
+          likeCount: result.likeCount,
+        }));
+        return result;
+      } catch (error) {
+        restoreLists(queryClient, snapshots);
+        if (single !== undefined) queryClient.setQueryData(["post", id], single);
+        toast(errorMessage(error, "Could not save that like."), { variant: "error" });
+        throw error;
+      }
+    },
+    [queryClient, toast]
+  );
+
+  return { createPost, updatePost, deletePost, toggleLike };
 }
