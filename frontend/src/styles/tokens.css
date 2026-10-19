@@ -1,0 +1,147 @@
+/* ============================================================================
+   Murmur design tokens
+   ----------------------------------------------------------------------------
+   Every colour, size and radius in the UI reads from this file. Tailwind
+   (tailwind.config.js) points at the same variables, so a theme change repaints
+   the app without a rebuild.
+
+   Values come straight from the Murmur design system v1.0:
+   - one accent for actions and identity
+   - like and danger stay separate so a heart never reads as a button
+   - all body pairings meet WCAG AA (4.5:1) in both themes
+   ========================================================================= */
+
+:root {
+  /* --- Colour: light (default) --------------------------------------- */
+  --bg: #f5f7f6;           /* page background                    */
+  --surface: #ffffff;      /* posts, cards, inputs               */
+  --surface-2: #ebf0ee;    /* hover, chips, search field         */
+  --line: #d9e1de;         /* dividers and borders               */
+
+  --ink: #0f1714;          /* primary text                       */
+  --ink-2: #4a5a55;        /* secondary copy                     */
+  --ink-3: #5f706a;        /* handles, timestamps, counts        */
+
+  --accent: #0a7f66;       /* buttons, links, active icons        */
+  --accent-ink: #ffffff;   /* text on accent                      */
+  --accent-soft: #ddf1eb;  /* accent tint, avatar fallback        */
+
+  --like: #c7284f;         /* liked heart and count only          */
+  --like-soft: #fbe4ea;    /* like hover tint                     */
+
+  --warn: #9a4a06;         /* counter warning                     */
+  --danger: #b3261e;       /* errors, destructive actions         */
+
+  /* --- Type ----------------------------------------------------------- *
+   * Bricolage Grotesque names things, Instrument Sans carries the posts,
+   * JetBrains Mono is reserved for counts in code and token names.
+   * The stacks fall back to system faces when the fonts have not loaded.   */
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;   /* post body */
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 30px;
+  --text-3xl: 44px;
+
+  /* --- Space: a 4px base --------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* --- Radius: pills for actions and tabs, radii for containers ------- */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  /* --- Elevation ------------------------------------------------------ */
+  --shadow-1: 0 1px 2px rgba(15, 23, 20, 0.06), 0 2px 8px rgba(15, 23, 20, 0.05);
+  --shadow-2: 0 8px 24px rgba(15, 23, 20, 0.14);
+
+  /* --- Motion --------------------------------------------------------- */
+  --dur-fast: 120ms;   /* hover colour, press scale          */
+  --dur-base: 200ms;   /* toasts, menus, tab indicator       */
+  --dur-slow: 320ms;   /* like pop, composer expand          */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* --- Layout --------------------------------------------------------- */
+  --nav-w: 232px;          /* full navigation column           */
+  --nav-compact-w: 72px;   /* icon-only navigation             */
+  --feed-w: 600px;         /* feed column, borders not cards   */
+  --rail-w: 340px;         /* search + trends rail             */
+  --shell-w: 1172px;       /* nav + feed + rail + gaps         */
+  --tap-target: 44px;      /* minimum touch target             */
+}
+
+/* Dark theme. Applied by the settings page (data-theme on <html>) or by the
+   operating system when no explicit choice has been made. ------------------ */
+[data-theme="dark"] {
+  --bg: #0b1110;
+  --surface: #121a18;
+  --surface-2: #1a2522;
+  --line: #26332f;
+
+  --ink: #eaf1ee;
+  --ink-2: #a7b8b2;
+  --ink-3: #8a9c96;
+
+  --accent: #2fd0a6;
+  --accent-ink: #06231c;
+  --accent-soft: #14322a;
+
+  --like: #ff7a98;
+  --like-soft: #3a1b26;
+
+  --warn: #f0a04b;
+  --danger: #ff8a80;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+/* Theme follows the operating system until a choice is stored. ------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1110;
+    --surface: #121a18;
+    --surface-2: #1a2522;
+    --line: #26332f;
+
+    --ink: #eaf1ee;
+    --ink-2: #a7b8b2;
+    --ink-3: #8a9c96;
+
+    --accent: #2fd0a6;
+    --accent-ink: #06231c;
+    --accent-soft: #14322a;
+
+    --like: #ff7a98;
+    --like-soft: #3a1b26;
+
+    --warn: #f0a04b;
+    --danger: #ff8a80;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.35);
+    --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* Reduced motion sets every duration token to zero. ------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "murmur",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Murmur - a text-first microblogging app (Next.js + Express + MongoDB)",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev": "concurrently -n api,web -c magenta,cyan \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "lint": "npm --prefix frontend run lint",
+    "build": "npm --prefix frontend run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

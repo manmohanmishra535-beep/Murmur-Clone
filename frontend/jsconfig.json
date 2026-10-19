@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "jsx": "preserve",
+    "module": "esnext",
+    "moduleResolution": "bundler"
+  },
+  "include": ["src/**/*", "next.config.js", "tailwind.config.js"],
+  "exclude": ["node_modules"]
+}

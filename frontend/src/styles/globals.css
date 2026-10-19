@@ -1,0 +1,139 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Globals
+   Small, deliberate layer on top of the tokens. Anything reusable enough to
+   appear three times belongs in a component instead.
+   ========================================================================== */
+
+@layer base {
+  html {
+    /* Keeps native controls (scrollbars, form widgets) in the right theme. */
+    color-scheme: light dark;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: var(--text-md);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Counts, timestamps and token names never shift width as they change. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Every interactive element shows the same focus treatment. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Never remove the outline without replacing it. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--ink);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    line-height: 1.25;
+  }
+}
+
+@layer utilities {
+  /* Hide content visually but keep it available to assistive tech. */
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Keyframes. All of them stop under reduced motion, which the global rule at
+   the bottom of this file enforces.
+   -------------------------------------------------------------------------- */
+
+@keyframes murmur-like-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.28);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes murmur-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes murmur-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@layer components {
+  .animate-like-pop {
+    animation: murmur-like-pop var(--dur-slow) var(--ease-out) both;
+  }
+
+  .animate-rise {
+    animation: murmur-rise var(--dur-base) var(--ease-out) both;
+  }
+
+  .animate-spin-fast {
+    animation: murmur-spin 700ms linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
