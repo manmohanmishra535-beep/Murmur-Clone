@@ -9,6 +9,7 @@ import "@/styles/globals.css";
 import AppShell from "@/components/AppShell";
 import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
+import { SocketProvider } from "@/context/SocketContext";
 
 // Login, register and the design-system reference sit outside the app shell.
 const BARE_ROUTES = new Set(["/login", "/register", "/design"]);
@@ -34,21 +35,23 @@ export default function App({ Component, pageProps }) {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
-          <Head>
-            <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <meta
-              name="description"
-              content="Murmur is a quiet, text-first microblogging app."
-            />
-          </Head>
+          <SocketProvider>
+            <Head>
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <meta
+                name="description"
+                content="Murmur is a quiet, text-first microblogging app."
+              />
+            </Head>
 
-          {bare ? (
-            <Component {...pageProps} />
-          ) : (
-            <AppShell>
+            {bare ? (
               <Component {...pageProps} />
-            </AppShell>
-          )}
+            ) : (
+              <AppShell>
+                <Component {...pageProps} />
+              </AppShell>
+            )}
+          </SocketProvider>
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>

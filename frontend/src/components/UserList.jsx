@@ -9,7 +9,7 @@ import { flattenPages } from "@/lib/posts";
 import { compactNumber } from "@/lib/format";
 
 /** One roster row: 44px avatar, name, handle, a one-line bio and a button. */
-function UserRow({ user }) {
+export function UserRow({ user }) {
   return (
     <div className="flex items-start gap-3 border-b border-line bg-surface p-4 transition-colors duration-fast ease-out hover:bg-surface-2">
       <Link

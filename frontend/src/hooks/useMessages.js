@@ -3,6 +3,7 @@ import { INBOX_LIMIT, MESSAGE_PAGE_SIZE, messageService } from "@/services/messa
 import { appendMessage, withLastMessage } from "@/lib/messages";
 import { errorMessage } from "@/services/api";
 import { useToast } from "./useToast";
+import { useSocket } from "./useSocket";
 
 /** The inbox, most recently active first. */
 export function useConversations({ enabled = true } = {}) {
@@ -52,16 +53,46 @@ export function useStartConversation() {
 }
 
 /**
- * Sending over REST. The socket pushes the same message back to both
- * participants, and the cache update de-duplicates by id, so the row is drawn
- * once whichever arrives first.
+ * Sending a message. When the socket is up it goes over `message:send`, which is
+ * the event the docs define and the fastest path: the server stores it through
+ * the same service the REST route uses and pushes `message:new` to both
+ * participants. With no socket (a dropped connection, or a first load) it falls
+ * back to POST, so the message is never lost to a transport.
+ *
+ * Either way the response and the push both carry the message, and the cache
+ * update de-duplicates by id, so the row is drawn once.
  */
 export function useSendMessage(conversationId) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { socket, connected } = useSocket();
 
   return useMutation({
-    mutationFn: (text) => messageService.send(conversationId, text),
+    mutationFn: (text) => {
+      if (!socket || !connected) return messageService.send(conversationId, text);
+
+      return new Promise((resolve, reject) => {
+        socket
+          .timeout(10000)
+          .emit("message:send", { conversationId, text }, (error, response) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            if (!response || !response.ok) {
+              // The ack carries the API's own error shape, so the toast reads
+              // the same as it would over REST.
+              const failure = new Error(
+                (response && response.error && response.error.message) ||
+                  "Could not send that message."
+              );
+              reject(failure);
+              return;
+            }
+            resolve(response.message);
+          });
+      });
+    },
     onSuccess: (message) => {
       queryClient.setQueryData(["messages", conversationId], (data) =>
         appendMessage(data, message)

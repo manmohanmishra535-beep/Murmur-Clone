@@ -1,10 +1,15 @@
 import {
   canFollow,
+  displayedPost,
   flattenPages,
   isOwnPost,
+  isPlainRepost,
+  withBookmark,
   withCommentCount,
+  withCounts,
   withFollow,
   withLike,
+  withRepost,
   withoutComment,
   withoutPost,
 } from "../posts";
@@ -163,5 +168,98 @@ describe("canFollow", () => {
   it("is false when signed out or without a user", () => {
     expect(canFollow({ _id: "u1" }, undefined)).toBe(false);
     expect(canFollow(null, "u2")).toBe(false);
+  });
+});
+
+describe("displayedPost", () => {
+  it("returns the post itself when it is not a repost", () => {
+    const post = { _id: "1", content: "Hello" };
+    expect(displayedPost(post)).toBe(post);
+  });
+
+  it("defers to the original for a repost with no content of its own", () => {
+    const original = { _id: "1", content: "Hello" };
+    const repost = { _id: "2", content: "", repostOf: original };
+
+    expect(displayedPost(repost)).toBe(original);
+    expect(isPlainRepost(repost)).toBe(true);
+  });
+
+  it("keeps the repost when it carries a comment, even an image-only one", () => {
+    const original = { _id: "1", content: "Hello" };
+    const quoted = { _id: "2", content: "Worth reading", repostOf: original };
+    const withImage = { _id: "3", content: "", images: [{ url: "a" }], repostOf: original };
+
+    expect(displayedPost(quoted)).toBe(quoted);
+    expect(isPlainRepost(quoted)).toBe(false);
+    expect(displayedPost(withImage)).toBe(withImage);
+    expect(isPlainRepost(withImage)).toBe(false);
+  });
+
+  it("passes nothing through", () => {
+    expect(displayedPost(null)).toBeNull();
+    expect(isPlainRepost(null)).toBe(false);
+  });
+});
+
+describe("withRepost", () => {
+  it("reposts and moves the counter", () => {
+    const post = { _id: "1", repostedByMe: false, repostCount: 2 };
+    const next = withRepost(post, true);
+
+    expect(next).toEqual({ _id: "1", repostedByMe: true, repostCount: 3 });
+    expect(post.repostCount).toBe(2);
+  });
+
+  it("undoes a repost and moves it back", () => {
+    expect(withRepost({ _id: "1", repostedByMe: true, repostCount: 3 }, false).repostCount).toBe(2);
+  });
+
+  it("is a no-op when the state already matches", () => {
+    // The optimistic write and the server's confirm must not add up.
+    expect(withRepost({ _id: "1", repostedByMe: true, repostCount: 3 }, true).repostCount).toBe(3);
+  });
+
+  it("never counts below zero", () => {
+    expect(withRepost({ _id: "1", repostedByMe: true }, false).repostCount).toBe(0);
+  });
+});
+
+describe("withBookmark", () => {
+  it("sets and clears the flag without touching a counter", () => {
+    const post = { _id: "1", bookmarkedByMe: false, likeCount: 4 };
+
+    expect(withBookmark(post, true)).toEqual({
+      _id: "1",
+      bookmarkedByMe: true,
+      likeCount: 4,
+    });
+    expect(withBookmark(post, false).bookmarkedByMe).toBe(false);
+  });
+});
+
+describe("withCounts", () => {
+  it("lays the pushed counters onto the post", () => {
+    const post = { _id: "1", likeCount: 1, commentCount: 0, repostCount: 0 };
+
+    const next = withCounts(post, { likeCount: 5, commentCount: 2, repostCount: 1 });
+
+    expect(next).toEqual({ _id: "1", likeCount: 5, commentCount: 2, repostCount: 1 });
+  });
+
+  it("leaves a counter alone when the push did not carry it", () => {
+    const post = { _id: "1", likeCount: 1, commentCount: 7, repostCount: 3 };
+
+    expect(withCounts(post, { likeCount: 2 })).toEqual({
+      _id: "1",
+      likeCount: 2,
+      commentCount: 7,
+      repostCount: 3,
+    });
+  });
+
+  it("passes a post or a push that is missing through", () => {
+    expect(withCounts(null, { likeCount: 1 })).toBeNull();
+    expect(withCounts({ _id: "1" }, null)).toEqual({ _id: "1" });
   });
 });

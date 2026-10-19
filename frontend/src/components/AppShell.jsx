@@ -10,7 +10,7 @@ import { PlusIcon } from "./icons";
  * disappears. Below 720px the feed is the only column and navigation becomes a
  * bottom bar with a floating post button.
  */
-export default function AppShell({ children, unreadCount = 0 }) {
+export default function AppShell({ children }) {
   const router = useRouter();
 
   function compose() {
@@ -28,7 +28,7 @@ export default function AppShell({ children, unreadCount = 0 }) {
   return (
     <div className="min-h-dvh bg-bg text-ink">
       <div className="mx-auto flex w-full max-w-shell">
-        <Sidebar unreadCount={unreadCount} />
+        <Sidebar />
 
         <main className="min-h-dvh w-full min-w-0 max-w-feed border-line pb-24 md:border-x md:pb-8">
           {children}
@@ -37,7 +37,7 @@ export default function AppShell({ children, unreadCount = 0 }) {
         <RightRail />
       </div>
 
-      <BottomBar unreadCount={unreadCount} />
+      <BottomBar />
 
       <button
         type="button"

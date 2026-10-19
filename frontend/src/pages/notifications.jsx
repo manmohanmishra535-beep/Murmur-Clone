@@ -1,11 +1,21 @@
+import { useEffect } from "react";
 import Head from "next/head";
 import PageHeader from "@/components/PageHeader";
-import EmptyState from "@/components/EmptyState";
-import { BellIcon } from "@/components/icons";
+import NotificationList from "@/components/NotificationList";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { useMarkAllRead, useNotifications } from "@/hooks/useNotifications";
 
 export default function NotificationsPage() {
   const { ready } = useRequireAuth();
+  const query = useNotifications({ enabled: ready });
+  const markAllRead = useMarkAllRead();
+
+  // Opening this screen clears the badge, which is what the docs put
+  // PATCH /api/notifications/read here for.
+  useEffect(() => {
+    if (!ready) return;
+    markAllRead();
+  }, [ready, markAllRead]);
 
   return (
     <>
@@ -13,12 +23,7 @@ export default function NotificationsPage() {
         <title>Notifications · Murmur</title>
       </Head>
       <PageHeader title="Notifications" />
-      {ready ? (
-        <EmptyState icon={BellIcon} title="No notifications yet">
-          Likes, comments, reposts and follows will show up here in Phase 4, pushed live
-          over Socket.IO. The unread badge already has its home in the sidebar.
-        </EmptyState>
-      ) : null}
+      {ready ? <NotificationList query={query} /> : null}
     </>
   );
 }

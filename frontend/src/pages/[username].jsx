@@ -11,18 +11,35 @@ import EmptyState from "@/components/EmptyState";
 import Skeleton from "@/components/Skeleton";
 import PostList from "@/components/PostList";
 import FollowButton from "@/components/FollowButton";
-import { BookmarkIcon, PencilIcon, ReplyIcon, UserIcon } from "@/components/icons";
+import { BookmarkIcon, MailIcon, PencilIcon, ReplyIcon, UserIcon } from "@/components/icons";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/useToast";
 import { useUserPosts } from "@/hooks/useFeed";
+import { useStartConversation } from "@/hooks/useMessages";
 import { userService } from "@/services/userService";
-import { errorCode } from "@/services/api";
+import { errorCode, errorMessage } from "@/services/api";
 import { compactNumber, joinedDate } from "@/lib/format";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { username } = router.query;
   const { user: viewer } = useAuth();
+  const { toast } = useToast();
+  const startConversation = useStartConversation();
   const [tab, setTab] = useState("posts");
+
+  /**
+   * "Message" opens the conversation that already exists with this account, or
+   * creates it, and goes straight to the thread.
+   */
+  async function openConversation() {
+    try {
+      const conversation = await startConversation.mutateAsync(profile._id);
+      router.push(`/messages/${conversation._id}`);
+    } catch (error) {
+      toast(errorMessage(error, "Could not open that conversation."), { variant: "error" });
+    }
+  }
 
   const profileQuery = useQuery({
     queryKey: ["profile", username],
@@ -119,7 +136,20 @@ export default function ProfilePage() {
               </Button>
             </Link>
           ) : (
-            <FollowButton user={profile} size="md" />
+            <div className="flex shrink-0 items-center gap-2">
+              {viewer ? (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  loading={startConversation.isPending}
+                  onClick={openConversation}
+                >
+                  <MailIcon size={16} />
+                  Message
+                </Button>
+              ) : null}
+              <FollowButton user={profile} size="md" />
+            </div>
           )}
         </div>
 

@@ -12,13 +12,17 @@ const PHRASES = {
   message: "sent you a message",
 };
 
-/** "Arjun liked your post" - the one line a row shows. */
+/** "Arjun liked your post" - the one line a row shows, and a toast reads. */
 export function notificationText(notification) {
   if (!notification) return "";
   const actor = notification.actor || {};
   const who = actor.displayName || actor.username || "Someone";
-  const phrase = PHRASES[notification.type] || "did something";
-  return `${who} ${phrase}`;
+  return `${who} ${notificationPhrase(notification.type)}`;
+}
+
+/** The half of that sentence which is not the actor's name. */
+export function notificationPhrase(type) {
+  return PHRASES[type] || "did something";
 }
 
 /** Where a row points: the post, the chat, or the account behind the action. */

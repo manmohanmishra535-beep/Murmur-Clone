@@ -3,6 +3,9 @@
  * can be tested without a browser or a live socket.
  */
 
+/** The API's message ceiling. Mirrored here so the composer can refuse early. */
+export const MESSAGE_MAX = 2000;
+
 /** True when two rows are the same message, whichever way it arrived. */
 function isSame(a, b) {
   return Boolean(a && b && a._id === b._id);

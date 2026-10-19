@@ -9,11 +9,13 @@ import {
   UserIcon,
 } from "./icons";
 import { useAuth } from "@/hooks/useAuth";
+import { useUnreadCount } from "@/hooks/useNotifications";
 
 /** Below 720px navigation moves to a bottom bar. Tap targets are 44px. */
-export default function BottomBar({ unreadCount = 0 }) {
+export default function BottomBar() {
   const router = useRouter();
   const { user } = useAuth();
+  const { data: unreadCount = 0 } = useUnreadCount({ enabled: Boolean(user) });
 
   const items = [
     { href: "/", label: "Home", icon: HomeIcon, active: router.pathname === "/" },

@@ -16,16 +16,21 @@ import {
 } from "./icons";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
+import { useUnreadCount } from "@/hooks/useNotifications";
 
 /**
  * 232px full navigation, 72px icon-only between 720px and 1000px.
  * Labels are hidden with CSS rather than a JS breakpoint, so server and client
  * render the same markup.
+ *
+ * The unread badge reads the shared count query, which a Socket.IO push moves
+ * in place, so a notification lights it up without a refetch.
  */
-export default function Sidebar({ unreadCount = 0 }) {
+export default function Sidebar() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const { data: unreadCount = 0 } = useUnreadCount({ enabled: Boolean(user) });
 
   const profileActive = user ? router.pathname === `/${user.username}` : false;
 
