@@ -56,4 +56,20 @@ export const userService = {
     );
     return data;
   },
+
+  /**
+   * GET /api/users/search?q= - up to 10 accounts. The API matches a prefix on
+   * the username and the text index on username and display name, so this is
+   * the as-you-type query as well as the "find that person" one.
+   */
+  async search(q) {
+    const { data } = await api.get("/users/search", { params: { q } });
+    return data.items;
+  },
+
+  /** GET /api/users/suggested - who to follow, the other half of /explore. */
+  async suggested() {
+    const { data } = await api.get("/users/suggested");
+    return data.items;
+  },
 };

@@ -68,3 +68,16 @@ export function useComments(postId, { enabled = true } = {}) {
     enabled: enabled && Boolean(postId),
   });
 }
+
+/**
+ * The viewer's saved posts. Bookmarks are private, so this is only ever enabled
+ * for a signed-in visitor, and the cache is patched in place when the same post
+ * is saved or unsaved from anywhere else in the app.
+ */
+export function useBookmarks({ enabled = true } = {}) {
+  return useCursorList({
+    queryKey: ["posts", "bookmarks"],
+    queryFn: (cursor) => postService.bookmarks({ cursor, limit: POST_PAGE_SIZE }),
+    enabled,
+  });
+}

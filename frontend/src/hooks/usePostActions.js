@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { postService } from "@/services/postService";
 import { errorMessage } from "@/services/api";
-import { withoutPost, withLike } from "@/lib/posts";
+import { withoutPost, withLike, withRepost, withBookmark } from "@/lib/posts";
 import { useToast } from "./useToast";
 
 /** Every cached list that holds posts: the feed, Explore and each timeline. */
@@ -10,7 +10,7 @@ function isPostList(query) {
   const [first, second] = query.queryKey;
   if (first === "feed") return true;
   if (first !== "posts") return false;
-  return second === "explore" || second === "user";
+  return second === "explore" || second === "user" || second === "bookmarks";
 }
 
 function mapLists(queryClient, mapper) {
@@ -36,14 +36,25 @@ function restoreLists(queryClient, snapshots) {
  * Overlays new fields on one post wherever it is cached: in every list, and in
  * the single-post cache the permalink page reads. The cache is the source of
  * truth, so two views of the same post can never drift apart.
+ *
+ * A plain repost shows the original post's body and buttons, so a change to the
+ * original is also written onto the repost's nested copy. Without that, liking a
+ * post from the repost that shows it would leave the two views disagreeing.
  */
 export function patchCachedPost(queryClient, postId, updater) {
-  mapLists(queryClient, (items) =>
-    items.map((post) => (post._id === postId ? updater(post) : post))
-  );
+  const patch = (post) => {
+    if (!post) return post;
+    if (post._id === postId) return updater(post);
+    if (post.repostOf && post.repostOf._id === postId) {
+      return { ...post, repostOf: updater(post.repostOf) };
+    }
+    return post;
+  };
+
+  mapLists(queryClient, (items) => items.map(patch));
 
   const single = queryClient.getQueryData(["post", postId]);
-  if (single !== undefined) queryClient.setQueryData(["post", postId], updater(single));
+  if (single !== undefined) queryClient.setQueryData(["post", postId], patch(single));
 }
 
 /** The single-post cache, or undefined when the permalink is not open. */
@@ -52,8 +63,8 @@ function snapshotPost(queryClient, postId) {
 }
 
 /**
- * Every write that changes a post, with the UI updated first and rolled back
- * if the request fails. Repost and bookmark join this hook in Phase 4.
+ * Every write that changes a post, with the UI updated first and rolled back if
+ * the request fails.
  */
 export function usePostActions() {
   const queryClient = useQueryClient();
@@ -157,5 +168,85 @@ export function usePostActions() {
     [queryClient, toast]
   );
 
-  return { createPost, updatePost, deletePost, toggleLike };
+  /**
+   * Repost and undo. The repost is a real post, so it also joins the viewer's
+   * own timeline and their followers' feeds: those lists are refetched rather
+   * than patched, because a repost can appear at the top of a list the viewer is
+   * not looking at.
+   *
+   * The flag and the counter are laid on the original straight away. A repost
+   * that already exists answers 200 instead of 201, so a second tap is a no-op
+   * rather than a second repost.
+   */
+  const toggleRepost = useCallback(
+    async (post) => {
+      const id = post._id;
+      const next = !post.repostedByMe;
+      const snapshots = snapshotLists(queryClient);
+      const single = snapshotPost(queryClient, id);
+
+      patchCachedPost(queryClient, id, (item) => withRepost(item, next));
+
+      try {
+        const result = next ? await postService.repost(id) : await postService.unrepost(id);
+
+        // The response carries the original with its authoritative counter.
+        if (next && result && result.repostOf) {
+          patchCachedPost(queryClient, id, (item) => ({
+            ...item,
+            repostedByMe: true,
+            repostCount: result.repostOf.repostCount,
+          }));
+        }
+
+        queryClient.invalidateQueries({ queryKey: ["feed"] });
+        queryClient.invalidateQueries({ queryKey: ["posts", "explore"] });
+        refreshProfiles();
+
+        if (next) toast("Reposted.", { variant: "success" });
+        return result;
+      } catch (error) {
+        restoreLists(queryClient, snapshots);
+        if (single !== undefined) queryClient.setQueryData(["post", id], single);
+        toast(errorMessage(error, "Could not repost that."), { variant: "error" });
+        throw error;
+      }
+    },
+    [queryClient, refreshProfiles, toast]
+  );
+
+  /**
+   * Save and unsave, a private toggle with no counter. The bookmarks list is a
+   * cache of its own, so it is refetched when it is open; the saved post moves
+   * in or out of it without a reload.
+   */
+  const toggleBookmark = useCallback(
+    async (post) => {
+      const id = post._id;
+      const next = !post.bookmarkedByMe;
+      const snapshots = snapshotLists(queryClient);
+      const single = snapshotPost(queryClient, id);
+
+      patchCachedPost(queryClient, id, (item) => withBookmark(item, next));
+
+      try {
+        const result = next ? await postService.bookmark(id) : await postService.unbookmark(id);
+        patchCachedPost(queryClient, id, (item) => withBookmark(item, result.bookmarked));
+        queryClient.invalidateQueries({ queryKey: ["posts", "bookmarks"] });
+
+        toast(result.bookmarked ? "Saved to your bookmarks." : "Removed.", {
+          variant: "success",
+        });
+        return result;
+      } catch (error) {
+        restoreLists(queryClient, snapshots);
+        if (single !== undefined) queryClient.setQueryData(["post", id], single);
+        toast(errorMessage(error, "Could not save that bookmark."), { variant: "error" });
+        throw error;
+      }
+    },
+    [queryClient, toast]
+  );
+
+  return { createPost, updatePost, deletePost, toggleLike, toggleRepost, toggleBookmark };
 }

@@ -86,4 +86,35 @@ export const postService = {
   async removeComment(commentId) {
     await api.delete(`/comments/${encode(commentId)}`);
   },
+
+  /**
+   * POST /api/posts/:id/repost - 201 with the new repost, or 200 with the one
+   * that already exists, so the toggle is safe to fire twice. The body carries
+   * the original in repostOf, counters and all.
+   */
+  async repost(id, content = "") {
+    const { data } = await api.post(`/posts/${encode(id)}/repost`, { content });
+    return data;
+  },
+
+  async unrepost(id) {
+    await api.delete(`/posts/${encode(id)}/repost`);
+  },
+
+  /** POST or DELETE /bookmark. Bookmarks answer { bookmarked: boolean }. */
+  async bookmark(id) {
+    const { data } = await api.post(`/posts/${encode(id)}/bookmark`);
+    return data;
+  },
+
+  async unbookmark(id) {
+    const { data } = await api.delete(`/posts/${encode(id)}/bookmark`);
+    return data;
+  },
+
+  /** GET /api/posts/bookmarks - the viewer's own saved posts, newest first. */
+  async bookmarks({ cursor, limit = POST_PAGE_SIZE } = {}) {
+    const { data } = await api.get("/posts/bookmarks", page({ cursor, limit }));
+    return data;
+  },
 };

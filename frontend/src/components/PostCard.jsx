@@ -15,7 +15,7 @@ import {
 } from "./icons";
 import { compactNumber, relativeTime } from "@/lib/format";
 import { cloudinaryUrl } from "@/lib/images";
-import { isOwnPost } from "@/lib/posts";
+import { displayedPost, isOwnPost } from "@/lib/posts";
 import { POST_MAX } from "@/lib/composer";
 
 function ActionButton({
@@ -35,7 +35,7 @@ function ActionButton({
     "-ml-2 flex h-11 min-w-11 items-center gap-1.5 rounded-pill px-2 text-sm tabular transition-colors duration-fast ease-out",
     active ? activeColor : "text-ink-3",
     !active && !disabled && "hover:bg-surface-2 hover:text-ink",
-    disabled && "cursor-not-allowed opacity-70"
+    disabled && "cursor-not-allowed opacity-60"
   );
 
   const content = (
@@ -72,17 +72,54 @@ function ActionButton({
   );
 }
 
+/** The 1, 2 or 4 image grid, shared by a post and by the original it quotes. */
+function MediaGrid({ images, content, author, priority }) {
+  if (!images || images.length === 0) return null;
+
+  return (
+    <div
+      className={clsx(
+        "mt-3 grid gap-2 overflow-hidden rounded-lg",
+        images.length === 1 ? "grid-cols-1" : "grid-cols-2"
+      )}
+    >
+      {images.map((image, index) => (
+        <Image
+          key={image.publicId || image.url || index}
+          src={cloudinaryUrl(image.url)}
+          alt={
+            content
+              ? `Image ${index + 1} in the post by @${author.username}`
+              : `Post image ${index + 1} by @${author.username}`
+          }
+          width={1200}
+          height={675}
+          sizes="(max-width: 720px) 100vw, 600px"
+          // The first image of a list sits above the fold, so it is the LCP
+          // candidate; anything below it stays lazy.
+          priority={priority && index === 0}
+          className="h-auto w-full rounded-lg border border-line object-cover"
+        />
+      ))}
+    </div>
+  );
+}
+
 /**
  * 44px avatar column, 16px padding, actions row with reply, repost, like,
  * bookmark and share. Counts use tabular numerals. Like and repost are toggle
  * buttons with aria-pressed and an updated label, and never use the accent
  * colour.
  *
- * A real post reads its like state and counts straight from the `post` prop,
- * because the query cache is what the optimistic write updates; only the
- * design-system specimen (`demo`) keeps its own copy, since it has no server.
- * Repost and bookmark are Phase 4, so outside the specimen they render as
- * disabled with a label that says so rather than pretending to work.
+ * A real post reads its state and counts straight from the `post` prop, because
+ * the query cache is what the optimistic write updates; only the design-system
+ * specimen (`demo`) keeps its own copy, since it has no server.
+ *
+ * A repost is a post whose `repostOf` points at another one, and it renders as
+ * the docs describe: a plain repost is that original with a "Reposted by" line,
+ * and a repost that carries a comment of its own shows the comment above the
+ * original. Either way the buttons act on the original, because that is the post
+ * that has the likes, the replies and the counters.
  */
 export default function PostCard({
   post,
@@ -99,24 +136,30 @@ export default function PostCard({
   onDelete,
   className,
 }) {
-  const [demoLiked, setDemoLiked] = useState(Boolean(post.likedByMe));
-  const [demoLikeCount, setDemoLikeCount] = useState(post.likeCount || 0);
-  const [demoReposted, setDemoReposted] = useState(Boolean(post.repostedByMe));
-  const [demoRepostCount, setDemoRepostCount] = useState(post.repostCount || 0);
-  const [demoBookmarked, setDemoBookmarked] = useState(Boolean(post.bookmarkedByMe));
+  // The post whose body and buttons this card shows. A plain repost defers to
+  // the original it points at; everything else is itself.
+  const shown = demo ? post : displayedPost(post);
+  const original = demo ? null : post.repostOf || null;
+  const plainRepost = Boolean(original) && shown !== post;
+
+  const [demoLiked, setDemoLiked] = useState(Boolean(shown.likedByMe));
+  const [demoLikeCount, setDemoLikeCount] = useState(shown.likeCount || 0);
+  const [demoReposted, setDemoReposted] = useState(Boolean(shown.repostedByMe));
+  const [demoRepostCount, setDemoRepostCount] = useState(shown.repostCount || 0);
+  const [demoBookmarked, setDemoBookmarked] = useState(Boolean(shown.bookmarkedByMe));
   const [pop, setPop] = useState(false);
 
-  const liked = demo ? demoLiked : Boolean(post.likedByMe);
-  const likeCount = demo ? demoLikeCount : post.likeCount || 0;
-  const reposted = demo ? demoReposted : Boolean(post.repostedByMe);
-  const repostCount = demo ? demoRepostCount : post.repostCount || 0;
-  const bookmarked = demo ? demoBookmarked : Boolean(post.bookmarkedByMe);
+  const liked = demo ? demoLiked : Boolean(shown.likedByMe);
+  const likeCount = demo ? demoLikeCount : shown.likeCount || 0;
+  const reposted = demo ? demoReposted : Boolean(shown.repostedByMe);
+  const repostCount = demo ? demoRepostCount : shown.repostCount || 0;
+  const bookmarked = demo ? demoBookmarked : Boolean(shown.bookmarkedByMe);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState(post.content || "");
+  const [editValue, setEditValue] = useState(shown.content || "");
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -146,11 +189,21 @@ export default function PostCard({
     };
   }, [menuOpen]);
 
-  const author = post.author || {};
-  const images = Array.isArray(post.images) ? post.images : [];
-  const canManage = isOwnPost(post, viewerId) && Boolean(onEdit || onDelete);
+  const author = shown.author || {};
+  const reposter = post.author || {};
+  const images = Array.isArray(shown.images) ? shown.images : [];
+  const originalAuthor = original ? original.author || {} : {};
+  const originalImages = original && Array.isArray(original.images) ? original.images : [];
+
+  // The menu belongs to whoever wrote the post being shown, which for a plain
+  // repost is the original author rather than the person who reposted it.
+  const canManage = isOwnPost(shown, viewerId) && Boolean(onEdit || onDelete);
   const remaining = POST_MAX - editValue.trim().length;
   const overLimit = remaining < 0;
+
+  // Replies hang off the post that has the thread. A plain repost is only a
+  // pointer at the original, so its reply action goes there.
+  const threadHref = replyHref && plainRepost ? `/post/${shown._id}` : replyHref;
 
   function toggleLike() {
     const next = !liked;
@@ -162,23 +215,25 @@ export default function PostCard({
       setDemoLiked(next);
       setDemoLikeCount((count) => Math.max(0, count + (next ? 1 : -1)));
     }
-    onLike?.(post);
+    onLike?.(shown);
   }
 
   function toggleRepost() {
-    const next = !reposted;
-    setDemoReposted(next);
-    setDemoRepostCount((count) => Math.max(0, count + (next ? 1 : -1)));
-    onRepost?.(next, post);
+    if (demo) {
+      const next = !demoReposted;
+      setDemoReposted(next);
+      setDemoRepostCount((count) => Math.max(0, count + (next ? 1 : -1)));
+    }
+    onRepost?.(shown);
   }
 
   function toggleBookmark() {
-    setDemoBookmarked((value) => !value);
-    onBookmark?.(!bookmarked, post);
+    if (demo) setDemoBookmarked((value) => !value);
+    onBookmark?.(shown);
   }
 
   function startEditing() {
-    setEditValue(post.content || "");
+    setEditValue(shown.content || "");
     setEditError("");
     setEditing(true);
     setMenuOpen(false);
@@ -201,7 +256,7 @@ export default function PostCard({
     setSavingEdit(true);
     setEditError("");
     try {
-      await onEdit(post._id, next);
+      await onEdit(shown._id, next);
       setEditing(false);
     } catch {
       setEditError("Could not save your changes. Try again.");
@@ -214,7 +269,7 @@ export default function PostCard({
     if (!onDelete) return;
     setDeleting(true);
     try {
-      await onDelete(post);
+      await onDelete(shown);
     } catch {
       setDeleting(false);
       setConfirmingDelete(false);
@@ -236,6 +291,13 @@ export default function PostCard({
       </div>
 
       <div className="min-w-0">
+        {plainRepost ? (
+          <p className="mb-1 flex items-center gap-1.5 text-xs text-ink-3">
+            <RepostIcon size={14} />
+            Reposted by @{reposter.username}
+          </p>
+        ) : null}
+
         <header className="flex items-start justify-between gap-2">
           <p className="min-w-0 text-base leading-snug">
             <Link
@@ -252,11 +314,11 @@ export default function PostCard({
             {/* Relative time genuinely differs between the server render and the
                 client (elapsed time keeps moving), so let the client value win
                 instead of warning about it. */}
-            <time dateTime={post.createdAt} suppressHydrationWarning className="text-sm text-ink-3">
-              {relativeTime(post.createdAt)}
+            <time dateTime={shown.createdAt} suppressHydrationWarning className="text-sm text-ink-3">
+              {relativeTime(shown.createdAt)}
             </time>
-            {post.editedAt ? (
-              <span className="text-sm text-ink-3" title={new Date(post.editedAt).toISOString()}>
+            {shown.editedAt ? (
+              <span className="text-sm text-ink-3" title={new Date(shown.editedAt).toISOString()}>
                 {" "}
                 · edited
               </span>
@@ -340,14 +402,10 @@ export default function PostCard({
           )}
         </header>
 
-        {post.repostOf ? (
-          <p className="mt-1 text-xs text-ink-3">Reposted by @{author.username}</p>
-        ) : null}
-
         {editing ? (
           <form onSubmit={saveEdit} className="mt-2" aria-label="Edit post">
             <Textarea
-              id={`edit-${post._id}`}
+              id={`edit-${shown._id}`}
               label="Post text"
               rows={3}
               value={editValue}
@@ -374,39 +432,58 @@ export default function PostCard({
               </Button>
             </div>
           </form>
-        ) : post.content ? (
+        ) : shown.content ? (
           <p className="mt-1 whitespace-pre-wrap break-words text-base leading-relaxed text-ink">
-            {post.content}
+            {shown.content}
           </p>
         ) : null}
 
-        {images.length > 0 ? (
-          <div
-            className={clsx(
-              "mt-3 grid gap-2 overflow-hidden rounded-lg",
-              images.length === 1 ? "grid-cols-1" : "grid-cols-2"
-            )}
-          >
-            {images.map((image, index) => (
-              <Image
-                key={image.publicId || image.url || index}
-                src={cloudinaryUrl(image.url)}
-                alt={
-                  post.content
-                    ? `Image ${index + 1} in the post by @${author.username}`
-                    : `Post image ${index + 1} by @${author.username}`
-                }
-                width={1200}
-                height={675}
-                sizes="(max-width: 720px) 100vw, 600px"
-                // The first image of a list sits above the fold, so it is the LCP
-                // candidate; anything below it stays lazy.
-                priority={priority && index === 0}
-                className="h-auto w-full rounded-lg border border-line object-cover"
-              />
-            ))}
+        <MediaGrid
+          images={images}
+          content={shown.content}
+          author={author}
+          priority={priority}
+        />
+
+        {/* A repost may carry a comment of its own; when it does, the original
+            is quoted underneath it rather than replacing it. */}
+        {original && !plainRepost ? (
+          <div className="mt-3 rounded-lg border border-line p-3">
+            <p className="text-sm leading-snug">
+              <Link
+                href={`/${originalAuthor.username || ""}`}
+                className="font-semibold text-ink hover:underline"
+              >
+                {originalAuthor.displayName || originalAuthor.username}
+              </Link>{" "}
+              <span className="text-ink-3">@{originalAuthor.username}</span>
+              <span aria-hidden="true" className="text-ink-3">
+                {" "}
+                ·{" "}
+              </span>
+              <time
+                dateTime={original.createdAt}
+                suppressHydrationWarning
+                className="text-ink-3"
+              >
+                {relativeTime(original.createdAt)}
+              </time>
+            </p>
+            {original.content ? (
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-ink">
+                {original.content}
+              </p>
+            ) : null}
+            <MediaGrid
+              images={originalImages}
+              content={original.content}
+              author={originalAuthor}
+              priority={false}
+            />
           </div>
-        ) : post.mediaPlaceholder ? (
+        ) : null}
+
+        {!shown.content && images.length === 0 && post.mediaPlaceholder ? (
           <div
             aria-hidden="true"
             className="mt-3 grid aspect-video w-full place-items-center rounded-lg border border-line bg-surface-2 text-xs text-ink-3"
@@ -419,31 +496,27 @@ export default function PostCard({
           <ActionButton
             icon={ReplyIcon}
             label={
-              demo || replyHref || onReply
+              demo || threadHref || onReply
                 ? `Reply to @${author.username}${
-                    post.commentCount ? `, ${compactNumber(post.commentCount)} replies` : ""
+                    shown.commentCount ? `, ${compactNumber(shown.commentCount)} replies` : ""
                   }`
                 : "Reply, not available here"
             }
-            count={post.commentCount}
-            href={replyHref}
-            disabled={!demo && !replyHref && !onReply}
-            onClick={() => onReply?.(post)}
+            count={shown.commentCount}
+            href={threadHref}
+            disabled={!demo && !threadHref && !onReply}
+            onClick={() => onReply?.(shown)}
           />
           <ActionButton
             icon={RepostIcon}
-            label={
-              demo
-                ? `${reposted ? "Undo repost" : "Repost"}${
-                    repostCount ? `, ${compactNumber(repostCount)} reposts` : ""
-                  }`
-                : "Repost, available in Phase 4"
-            }
+            label={`${reposted ? "Undo repost" : "Repost"}${
+              repostCount ? `, ${compactNumber(repostCount)} reposts` : ""
+            }`}
             count={repostCount}
             active={reposted}
             activeColor="text-accent"
             pressed={reposted}
-            disabled={!demo}
+            disabled={!demo && !onRepost}
             onClick={toggleRepost}
           />
           <ActionButton
@@ -460,18 +533,18 @@ export default function PostCard({
           />
           <ActionButton
             icon={BookmarkIcon}
-            label={demo ? (bookmarked ? "Remove bookmark" : "Bookmark") : "Bookmark, available in Phase 4"}
+            label={bookmarked ? "Remove bookmark" : "Bookmark"}
             active={bookmarked}
             activeColor="text-accent"
             iconFilled={bookmarked}
             pressed={bookmarked}
-            disabled={!demo}
+            disabled={!demo && !onBookmark}
             onClick={toggleBookmark}
           />
           <ActionButton
             icon={ShareIcon}
             label="Share post"
-            onClick={() => onShare?.(post)}
+            onClick={() => onShare?.(shown)}
             disabled={!onShare}
           />
         </footer>

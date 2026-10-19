@@ -50,6 +50,62 @@ export function withCommentCount(post, delta) {
   return { ...post, commentCount: Math.max(0, (post.commentCount || 0) + delta) };
 }
 
+/**
+ * A repost with no content of its own is only a pointer at another post, and
+ * the docs render it as that post with a "Reposted by" line. So the post whose
+ * body, counts and actions a card shows is the original in that case, and the
+ * repost itself in every other.
+ */
+export function displayedPost(post) {
+  if (!post) return post;
+  if (!post.repostOf) return post;
+  const hasOwnBody = Boolean(post.content) || (Array.isArray(post.images) && post.images.length > 0);
+  return hasOwnBody ? post : post.repostOf;
+}
+
+/** True for the plain pointer case above, where the reposter adds no words. */
+export function isPlainRepost(post) {
+  return Boolean(post && post.repostOf) && displayedPost(post) !== post;
+}
+
+/**
+ * The post with a repost or an un-repost applied, in the same shape as
+ * withLike: the flag and the counter move together, and applying the state the
+ * post already has is a no-op so the optimistic write and the server's confirm
+ * cannot double-count.
+ */
+export function withRepost(post, reposted) {
+  const next = Boolean(reposted);
+  if (Boolean(post.repostedByMe) === next) {
+    return { ...post, repostCount: Math.max(0, post.repostCount || 0) };
+  }
+  return {
+    ...post,
+    repostedByMe: next,
+    repostCount: Math.max(0, (post.repostCount || 0) + (next ? 1 : -1)),
+  };
+}
+
+/** The post with a bookmark set or cleared. Bookmarks carry no counter. */
+export function withBookmark(post, bookmarked) {
+  return { ...post, bookmarkedByMe: Boolean(bookmarked) };
+}
+
+/**
+ * The post with the counters a post:counts push carried. This is what keeps the
+ * author's own copy of a post live while other people like and reply to it.
+ */
+export function withCounts(post, counts) {
+  if (!post || !counts) return post;
+  return {
+    ...post,
+    likeCount: typeof counts.likeCount === "number" ? counts.likeCount : post.likeCount,
+    commentCount:
+      typeof counts.commentCount === "number" ? counts.commentCount : post.commentCount,
+    repostCount: typeof counts.repostCount === "number" ? counts.repostCount : post.repostCount,
+  };
+}
+
 /** Removes one reply from every cached comment page. */
 export function withoutComment(data, commentId) {
   if (!data || !Array.isArray(data.pages)) return data;
