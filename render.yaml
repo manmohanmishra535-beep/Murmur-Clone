@@ -1,0 +1,38 @@
+# Render blueprint for the API.
+#
+# Render reads this file when the repository is connected as a Blueprint. The
+# web app is not here: it is a Next.js app and deploys to Vercel, which builds
+# it from frontend/ (Root Directory). The API needs a long-lived process and
+# WebSockets, which Vercel Functions do not provide.
+#
+# One instance on purpose: Socket.IO rooms live in the process, so a second
+# instance would only see half the sockets. Add the Redis adapter first.
+services:
+  - type: web
+    name: murmur-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      # Render generates this once; assertConfig rejects anything under 32 chars.
+      - key: JWT_SECRET
+        generateValue: true
+      # Filled in on the first deploy, then managed in the dashboard.
+      - key: MONGO_URI
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: API_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

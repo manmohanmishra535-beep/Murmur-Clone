@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log*
+
+# Secrets never belong in an image; the platform supplies them.
+.env
+.env.*
+
+# The runtime does not need the test suite.
+tests
+coverage
+jest.config.js
+
+.git
+.gitignore
+Dockerfile
+.dockerignore
+README.md

@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log*
+
+# Rebuilt inside the image.
+.next
+out
+
+# Secrets and per-machine overrides never belong in an image.
+.env
+.env.*
+
+coverage
+.git
+.gitignore
+Dockerfile
+.dockerignore
+README.md

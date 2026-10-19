@@ -1,0 +1,62 @@
+# The local stack: MongoDB, the API and the web app, all in containers.
+#
+#   cp backend/.env.example backend/.env      # fill in JWT_SECRET
+#   docker compose up --build
+#
+# Then open http://localhost:3000. This is a development stack on purpose: it
+# runs plain HTTP on localhost, so the API must not mark its cookie Secure or
+# Safari will drop it. Production sets NODE_ENV=production and the same image
+# behind HTTPS.
+name: murmur
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    # Holds JWT_SECRET, and the Cloudinary trio if uploads should work.
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: development
+      PORT: "5000"
+      # The service name inside the compose network, not localhost.
+      MONGO_URI: mongodb://mongo:27017/murmur
+      # The browser's origin, which is what CORS and the socket handshake check.
+      CLIENT_URL: ${WEB_ORIGIN:-http://localhost:3000}
+      API_URL: ${API_ORIGIN:-http://localhost:5000}
+    ports:
+      - "5000:5000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Inlined at build time, so these are the URLs the browser will call.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
+        NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost:5000}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  mongo-data:

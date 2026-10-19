@@ -1,0 +1,2 @@
+Keeps `public/` in the repository so the Docker image can copy it before any
+static file exists. Next.js serves anything placed here at the site root.

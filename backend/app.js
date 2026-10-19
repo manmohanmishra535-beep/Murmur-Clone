@@ -6,6 +6,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const mongoSanitize = require("express-mongo-sanitize");
 const morgan = require("morgan");
+const { randomUUID } = require("crypto");
 
 const config = require("./config/env");
 const routes = require("./routes");
@@ -14,6 +15,19 @@ const errorHandler = require("./middleware/errorHandler");
 const { globalLimiter } = require("./middleware/rateLimit");
 
 const app = express();
+
+// A request id, echoed to the caller and printed with the log line, so a report
+// from production can be matched to an entry in the host's log stream. The
+// docs' error shape is left alone; the id travels in the header.
+const REQUEST_ID = /^[A-Za-z0-9._-]{1,64}$/;
+
+app.use((req, res, next) => {
+  const offered = req.get("x-request-id");
+  // Only accept a header that cannot forge or split a log line.
+  req.id = offered && REQUEST_ID.test(offered) ? offered : randomUUID();
+  res.set("X-Request-Id", req.id);
+  next();
+});
 
 // The API sits behind a proxy in every deployed environment, which the rate
 // limiter needs to read the real client IP from X-Forwarded-For.
@@ -40,7 +54,16 @@ app.use(cookieParser());
 app.use(mongoSanitize());
 
 if (!config.isTest) {
-  app.use(morgan(config.isProd ? "combined" : "dev"));
+  // One line per request, prefixed with the id the response carried, so the
+  // host's log stream and a support report can be lined up.
+  morgan.token("id", (req) => req.id);
+  app.use(
+    morgan(
+      config.isProd
+        ? ":id :remote-addr :method :url :status :res[content-length] - :response-time ms"
+        : ":id :method :url :status - :response-time ms"
+    )
+  );
 }
 
 // 5. Global rate limit for /api, with a stricter one on auth inside the router.
