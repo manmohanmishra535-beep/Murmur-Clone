@@ -12,8 +12,9 @@ import { AuthProvider } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
 import { SocketProvider } from "@/context/SocketContext";
 
-// Login, register and the design-system reference sit outside the app shell.
-const BARE_ROUTES = new Set(["/login", "/register", "/design"]);
+// Login, register, the OAuth callback and the design-system reference sit
+// outside the app shell.
+const BARE_ROUTES = new Set(["/login", "/register", "/sso-callback", "/design"]);
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();

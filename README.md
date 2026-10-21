@@ -35,7 +35,7 @@ twitter-clone/
 | Protected routes and ownership helper | `backend/middleware/auth.js` |
 | Profile read (`GET /api/users/:username`) and profile edit (`PATCH /api/users/me`, avatar upload) | `backend/controllers/userController.js` |
 | Validation, error shape, rate limits, helmet, CORS, sanitising | `backend/middleware/*`, `backend/validators/*` |
-| Login and register screens hosting Clerk's components, plus profile and settings | `frontend/src/pages/login.jsx`, `register.jsx`, `[username].jsx`, `settings.jsx` |
+| Custom login, register, password-reset and OAuth-callback screens over Clerk's API — no Clerk-branded UI | `frontend/src/pages/login.jsx`, `register.jsx`, `sso-callback.jsx`, `[username].jsx`, `settings.jsx` |
 | Route protection in middleware plus a client-side session guard | `frontend/src/middleware.js`, `frontend/src/hooks/useRequireAuth.js` |
 | Design tokens and the core component set | `frontend/src/styles/tokens.css`, `frontend/tailwind.config.js`, `frontend/src/components/*` |
 
@@ -471,8 +471,10 @@ All routes are under `/api` and speak JSON. Errors always use
 | GET | `/api/users/search?q=` | yes | Up to 10 accounts matching a username prefix or display name |
 | GET | `/api/users/suggested` | yes | Up to 10 accounts the viewer does not follow, most followed first |
 
-**Authentication.** Sign-up, sign-in, sign-out and password resets are Clerk's screens, not
-this API's routes. Every "yes" row above needs `Authorization: Bearer <Clerk session token>`.
+**Authentication.** Sign-up, sign-in, sign-out and password resets are Clerk's sessions, but
+the forms are ours: `login.jsx` and `register.jsx` drive Clerk's sign-in and sign-up resources
+directly, so the pages match the design system and carry no Clerk branding. Every "yes" row
+above needs `Authorization: Bearer <Clerk session token>`.
 The token is verified by `clerkMiddleware` — locally when `CLERK_JWT_KEY` is set, otherwise
 against Clerk's cached JWKS — and its `azp` claim must be in `CLERK_AUTHORIZED_PARTIES`.
 The first verified request creates the app's `User` row: `clerkId` from the token's `sub`,
@@ -652,8 +654,9 @@ the author's socket, along with `notification:remove`, `post:counts`, a socket-s
 stored for both participants, a failed send returning an ack instead of throwing, and typing
 reaching the peer only.
 
-Frontend: 104 tests over the pure modules — `compactNumber`, `relativeTime`,
-`joinedDate`, the profile validators (display name and bio), the composer counter maths and
+Frontend: 109 tests over the pure modules — `compactNumber`, `relativeTime`,
+`joinedDate`, the profile validators (display name and bio), the Clerk error-message helper,
+the composer counter maths and
 `isPostable` with images, the image type/size/batch rules, the Cloudinary transform helper,
 the post list helpers (`flattenPages`, `isOwnPost`, `withoutPost`, `withLike`,
 `withCommentCount`, `withoutComment`, `withFollow`, `canFollow`, `displayedPost`,
@@ -678,6 +681,11 @@ production frontend build, covering the whole Phase 4 surface including live del
   providers and resets live in Clerk, so the API stores no credential and cannot leak one.
   The `User` row keeps the fields the rest of the app needs (handle, email, bio, avatar,
   follow graph, bookmarks) and links to Clerk with a sparse unique `clerkId`.
+- **The auth forms are ours, not Clerk's prebuilt components.** Clerk's prebuilt UI carries
+  its own branding (removing it is a paid-plan feature), so `login.jsx` and `register.jsx`
+  drive Clerk's sign-in and sign-up resources directly: same sessions, same OAuth handshake,
+  same password handling, but Murmur's markup and no vendor badge. `/sso-callback` finishes
+  Google's redirect, and the API never sees a password.
 - **The app profile is created lazily.** `GET /api/auth/me` provisions the row on the first
   verified request: the handle comes from the Clerk username when it fits the app's rule,
   otherwise from the email's local part, and is de-duplicated. This means no webhook is
