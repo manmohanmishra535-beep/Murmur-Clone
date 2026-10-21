@@ -1,24 +1,25 @@
 name: CI
 
-# Every push and pull request runs the same checks. On main, a green run also
-# publishes the API image and asks the hosts to deploy; that is the "pushing to
-# main deploys a tagged build with passing tests" line in the docs.
+# Every push and pull request runs the same checks. On the default branch, a
+# green run also publishes the API image and asks the hosts to deploy; that is
+# the "pushing to main deploys a tagged build with passing tests" line in the docs.
 on:
   push:
-    branches: [main]
+    # The repository's default branch is master; main is accepted too so a
+    # rename needs no edit here.
+    branches: [main, master]
   pull_request:
   workflow_dispatch:
 
-# The publish job needs to write to GHCR; everything else is read-only.
+# Everything is read-only by default; only the publish job may write images.
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  # A newer push to the same branch supersedes the old run, except on main,
-  # where the deploy of the previous commit is allowed to finish.
+  # A newer push to the same branch supersedes the old run, except on the
+  # deploy branches, where the deploy of the previous commit is allowed to finish.
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ !(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
 
 jobs:
   backend:
@@ -120,7 +121,10 @@ jobs:
     name: Publish the API image
     runs-on: ubuntu-latest
     needs: [backend, frontend, docker]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -176,7 +180,7 @@ jobs:
         run: |
           if [ -z "$VERCEL_DEPLOY_HOOK" ]; then
             echo "VERCEL_DEPLOY_HOOK is not set; skipping."
-            echo "Vercel's Git integration already deploys main by itself."
+            echo "Vercel's Git integration already deploys the branch by itself."
             echo "Set the hook only if this repository should be the trigger."
             exit 0
           fi

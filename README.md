@@ -269,6 +269,12 @@ notifications and chat that Phase 4 is built on.
 a restart. `frontend/.env.local` is not read by Vercel; the dashboard is the only source
 there.
 
+**If the API is not deployed yet**, deploy the web app first and leave both variables unset.
+The build falls back to `http://localhost:5000`, so every page renders and `/design` works in
+full, but any call to the API reports "Cannot reach the Murmur API" and sign-in cannot
+complete. When the API has a URL, add the two variables and redeploy — one redeploy, not a
+new project.
+
 ### API on Render
 
 `render.yaml` is a blueprint for the API: a Docker web service built from
@@ -353,9 +359,9 @@ docker run -d --name murmur-api -p 5000:5000 \
 | *API tests* | `npm ci`, a production `npm audit`, then the Jest suite on a real in-memory MongoDB (the binary is cached between runs) |
 | *Web tests, lint and build* | `npm ci`, a production `npm audit`, Jest, `next lint`, `next build` |
 | *Images build* | builds both Docker images without pushing, so a broken Dockerfile fails before merge |
-| *Publish the API image* | **main only**: pushes `ghcr.io/<repo>/api:<sha>` and `:latest` |
-| *Deploy the API* | **main only**: POSTs the Render deploy hook |
-| *Deploy the web app* | **main only**: POSTs the Vercel deploy hook, if one is configured |
+| *Publish the API image* | **default branch only**: pushes `ghcr.io/<repo>/api:<sha>` and `:latest` |
+| *Deploy the API* | **default branch only**: POSTs the Render deploy hook |
+| *Deploy the web app* | **default branch only**: POSTs the Vercel deploy hook, if one is configured |
 | *Health check* | polls `GET /api/health` and the frontend's `/login` after a deploy |
 
 Deployment only runs after the tests and the image builds pass, and the image is tagged with
