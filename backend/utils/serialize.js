@@ -2,8 +2,9 @@
 
 /**
  * One place that decides what a user looks like over the wire.
- * The password hash, the private bookmark list and the follower arrays never
- * leave the API; counts go out instead, plus the viewer's own relationship flags.
+ * The private bookmark list, the email (unless the viewer is the owner) and the
+ * follower arrays never leave the API; counts go out instead, plus the viewer's
+ * own relationship flags.
  */
 function serializeUser(user, options = {}) {
   const { includeEmail = false, isFollowing = false, counts = {} } = options;

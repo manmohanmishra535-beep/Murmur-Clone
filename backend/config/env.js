@@ -10,7 +10,6 @@ const config = {
   isTest: nodeEnv === "test",
   port: Number(process.env.PORT) || 5000,
   clientUrl: process.env.CLIENT_URL || "http://localhost:3000",
-  apiUrl: process.env.API_URL || "",
   mongoUri: process.env.MONGO_URI,
   clerk: {
     secretKey: process.env.CLERK_SECRET_KEY,
@@ -19,9 +18,12 @@ const config = {
     // a round trip to Clerk on every request.
     jwtKey: process.env.CLERK_JWT_KEY,
     // Session tokens carry the origin that asked for them in "azp". The
-    // frontend's origin has to be on this list or its tokens are refused.
-    authorizedParties: (process.env.CLERK_AUTHORIZED_PARTIES || process.env.CLIENT_URL || "")
-      .split(",")
+    // frontend's origin has to be on this list or its tokens are refused;
+    // CLERK_AUTHORIZED_PARTIES adds preview origins on top of CLIENT_URL.
+    authorizedParties: [
+      process.env.CLIENT_URL || "http://localhost:3000",
+      ...(process.env.CLERK_AUTHORIZED_PARTIES || "").split(","),
+    ]
       .map((value) => value.trim())
       .filter(Boolean),
   },

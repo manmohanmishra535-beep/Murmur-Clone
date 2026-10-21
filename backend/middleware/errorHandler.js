@@ -41,10 +41,6 @@ function normalize(err) {
     return new AppError(409, "ALREADY_EXISTS", message, { [field]: message });
   }
 
-  if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
-    return AppError.unauthenticated("Your session expired. Log in again.");
-  }
-
   // express.json / urlencoded
   if (err.type === "entity.too.large") {
     return new AppError(413, "PAYLOAD_TOO_LARGE", "That request body is too large.");

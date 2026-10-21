@@ -8,6 +8,10 @@ This repository contains the **foundation plus Phases 1 (Authentication), 2 (Pos
 system from the Murmur design system v1.0 document. Phase 5's deployment setup — Docker,
 CI/CD and the Vercel/Render configuration — is in place as well; see **Deployment** below.
 
+Identity is delegated to **Clerk**: sign-up, sign-in, social providers, password resets and
+sessions live there. The API verifies Clerk's session token on every request and keeps the
+app's own `User` row for posts, follows and messages, so the data model is unchanged.
+
 ```
 twitter-clone/
 ├── backend/          Express API, Mongoose models, Jest + Supertest tests
@@ -24,21 +28,22 @@ twitter-clone/
 
 | Deliverable | Where |
 | --- | --- |
-| Register, login, logout, current user | `backend/routes/auth.js`, `backend/controllers/authController.js` |
-| Forgot and reset password: one-use, 30-minute hashed token; a reset retires every older session | `controllers/authController.js`, `utils/resetToken.js`, `utils/mailer.js` |
-| bcrypt hashing at cost 12, `password` has `select: false` | `backend/models/User.js` |
-| HS256 JWT in an httpOnly cookie named `token`, carrying a password generation | `backend/utils/token.js` |
+| Sign-up, sign-in, sign-out, social providers, password reset, sessions | Clerk (hosted identity provider) |
+| Session verification on every API request; networkless when `CLERK_JWT_KEY` is set | `backend/app.js`, `backend/middleware/auth.js` |
+| App profile linked to the Clerk user id and created on first sign-in | `backend/services/userProvisioning.js`, `backend/models/User.js` |
+| Handle rules kept: Clerk username when it fits, else the email's local part, de-duplicated | `backend/services/userProvisioning.js` |
 | Protected routes and ownership helper | `backend/middleware/auth.js` |
 | Profile read (`GET /api/users/:username`) and profile edit (`PATCH /api/users/me`, avatar upload) | `backend/controllers/userController.js` |
 | Validation, error shape, rate limits, helmet, CORS, sanitising | `backend/middleware/*`, `backend/validators/*` |
-| Login, register, profile, settings screens with inline validation | `frontend/src/pages/login.jsx`, `register.jsx`, `[username].jsx`, `settings.jsx` |
-| Forgot-password and reset-password screens, linked from the login form | `frontend/src/pages/forgot-password.jsx`, `reset-password.jsx` |
+| Login and register screens hosting Clerk's components, plus profile and settings | `frontend/src/pages/login.jsx`, `register.jsx`, `[username].jsx`, `settings.jsx` |
 | Route protection in middleware plus a client-side session guard | `frontend/src/middleware.js`, `frontend/src/hooks/useRequireAuth.js` |
 | Design tokens and the core component set | `frontend/src/styles/tokens.css`, `frontend/tailwind.config.js`, `frontend/src/components/*` |
 
 The "done when" line for Phase 1 — *a user can sign up, log in, and edit a profile;
-unauthenticated calls return 401* — is covered by the API tests and was verified over
-real HTTP.
+unauthenticated calls return 401* — is covered by the API tests: the suite mints session
+tokens with a throwaway RSA key and exercises the same verification path as production, so
+it needs no Clerk account. The hosted sign-up form itself needs real Clerk keys; see
+**Setup**.
 
 ### Phase 2 — Posts (complete)
 
@@ -80,7 +85,7 @@ upload stubbed because no credentials were available locally.
 The "done when" line for Phase 3 — *the home feed shows only followed users' posts, newest
 first* — is covered by the API tests (the feed after following, and again after unfollowing)
 and by a 26-check run over real HTTP against the running API and an in-memory MongoDB, which
-drove two accounts through register → post → follow → feed → like → reply → delete →
+drove two accounts through account creation → post → follow → feed → like → reply → delete →
 unfollow. The browser itself could not be used for this pass: the browser surface here never
 becomes visible, so the page never hydrates. The UI is therefore covered by the production
 build, the linter and the component-free lib tests rather than by clicking.
@@ -97,7 +102,7 @@ build, the linter and the component-free lib tests rather than by clicking.
 | `Conversation` and `Message` models with their indexes | `backend/models/Conversation.js`, `Message.js` |
 | Inbox, open-or-create a conversation, paged thread, send a message | `backend/controllers/messageController.js`, `services/conversationService.js` |
 | `GET /api/users/search` (prefix plus text index) and `GET /api/users/suggested` | `backend/controllers/userController.js` |
-| Socket.IO on the API's own HTTP server, authenticated by the same JWT cookie | `backend/realtime/io.js` |
+| Socket.IO on the API's own HTTP server, authenticated by the same Clerk session token | `backend/realtime/io.js` |
 | Live pushes: `notification:new`, `notification:remove`, `message:new`, `post:counts`, `typing:start`/`typing:stop` | `backend/realtime/emitter.js`, `controllers/*` |
 | One socket per session behind `SocketProvider`, opening on login and closing on logout | `frontend/src/context/SocketContext.jsx` |
 | Push handlers that write into the React Query cache, so nothing refetches | `context/SocketContext.jsx`, `lib/notifications.js`, `lib/messages.js` |
@@ -130,7 +135,8 @@ component, the layout rules and the do/don't list. It includes a theme switcher.
 Nothing from the delivery table is outstanding. The deployment setup is written and
 committed — Docker images, the compose stack, the CI/CD pipeline, the Render blueprint and
 the Vercel steps — but it has not been pointed at real accounts, so the Deployment section
-documents the one-time connection rather than a live URL.
+documents the one-time connection rather than a live URL. The web app also needs a Clerk
+application and its two keys before it can sign anyone in; see **Setup**.
 
 Three things are honest about their limits rather than faking data. The profile's **Replies**
 and **Likes** tabs stay empty: the API reference defines no "this account's replies" or
@@ -145,6 +151,7 @@ complete so nothing dead-ends.
 
 - Node 20 or later
 - A MongoDB instance (local, Docker, or Atlas) — optional, see *Running without MongoDB*
+- A free Clerk application — required for sign-in
 - A free Cloudinary account — only needed for image uploads
 
 ## Setup
@@ -158,21 +165,28 @@ cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env.local
 ```
 
-Generate a secret for `JWT_SECRET`:
+Create an application at <https://dashboard.clerk.com> and copy two keys from **API keys**:
 
-```bash
-node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-```
+- **Publishable key** → `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` in `frontend/.env.local`, and
+  `CLERK_PUBLISHABLE_KEY` in `backend/.env`.
+- **Secret key** → `CLERK_SECRET_KEY` in `backend/.env`. It is server-only; never give it a
+  `NEXT_PUBLIC_` name.
 
-Fill in `MONGO_URI` and `JWT_SECRET` at minimum. `CLOUDINARY_*` can stay empty; the API
-starts and logs that uploads are disabled.
+Optional but recommended: copy the **JWT public key** (PEM) into `CLERK_JWT_KEY`. With it the
+API verifies session tokens locally; without it the SDK fetches and caches the instance's
+JWKS. If you want people to choose their `@handle` at sign-up, enable **Username** in the
+Clerk dashboard's sign-up options — otherwise the API derives one from the email's local
+part (see `backend/services/userProvisioning.js`).
+
+Fill in `MONGO_URI` as well. `CLOUDINARY_*` can stay empty; the API starts and logs that
+uploads are disabled.
 
 ```bash
 # 3. Run both apps
 npm run dev            # API on :5000 (nodemon), web on :3000
 ```
 
-Open <http://localhost:3000>, register a user, and the profile page loads.
+Open <http://localhost:3000>, create an account through Clerk, and the profile page loads.
 
 ### Environment variables
 
@@ -181,14 +195,13 @@ Open <http://localhost:3000>, register a user, and the profile page loads.
 | Variable | Purpose |
 | --- | --- |
 | `MONGO_URI` | Mongo connection string, for example `mongodb://localhost:27017/murmur` |
-| `JWT_SECRET` | Signs access tokens, at least 32 characters |
-| `JWT_EXPIRES_IN` | Token lifetime, default `7d` |
-| `CLIENT_URL` | Single allowed CORS origin and Socket.IO origin |
-| `API_URL` | Public API URL, used only to decide the cookie's `SameSite` in production |
-| `COOKIE_SAMESITE` | Optional override: `lax`, `none` or `strict` |
+| `CLERK_SECRET_KEY` | Server-only Clerk secret key; verifies session tokens |
+| `CLERK_PUBLISHABLE_KEY` | The matching publishable key |
+| `CLERK_JWT_KEY` | Optional PEM public key: verify tokens without calling Clerk |
+| `CLERK_AUTHORIZED_PARTIES` | Optional comma-separated extra origins whose tokens are accepted (previews) |
+| `CLIENT_URL` | The web app's origin: CORS, Socket.IO, and the default authorized party |
 | `PORT` | API port, default 5000 |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Image uploads |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Password reset emails. Optional: without a host the API logs each link instead, and outside production also returns it to the page. Port 465 uses implicit TLS, anything else STARTTLS. |
 
 **frontend/.env.local**
 
@@ -196,8 +209,11 @@ Open <http://localhost:3000>, register a user, and the profile page loads.
 | --- | --- |
 | `NEXT_PUBLIC_API_URL` | Axios base URL, for example `http://localhost:5000/api` |
 | `NEXT_PUBLIC_SOCKET_URL` | Socket.IO endpoint, for example `http://localhost:5000` |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk's publishable key; the provider and middleware need it |
 
-Both are inlined by `next build`, so a change needs a rebuild — on Vercel, a redeploy.
+The `NEXT_PUBLIC_*` values are inlined by `next build`, so a change needs a rebuild — on
+Vercel, a redeploy. `CLERK_SECRET_KEY` is different: Next's middleware reads it at runtime,
+so it belongs in the host's environment on Vercel as well, not only in the API.
 
 ### Running without MongoDB
 
@@ -211,7 +227,7 @@ The API needs a database. Two easy options:
 const { MongoMemoryServer } = require("mongodb-memory-server");
 MongoMemoryServer.create().then((mongo) => {
   process.env.MONGO_URI = mongo.getUri();
-  process.env.JWT_SECRET = "at-least-32-characters-long-secret-value-here";
+  // Clerk keys still come from .env; they are required before this loads.
   require("./server").default ?? require("./server");
 });
 ```
@@ -265,33 +281,43 @@ notifications and chat that Phase 4 is built on.
    | --- | --- |
    | `NEXT_PUBLIC_API_URL` | `https://<api-host>/api` |
    | `NEXT_PUBLIC_SOCKET_URL` | `https://<api-host>` |
+   | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | the publishable key from Clerk |
+   | `CLERK_SECRET_KEY` | the secret key; Next's middleware reads it at runtime |
 
 4. Deploy. Every push to the branch Vercel tracks rebuilds it.
 
 `NEXT_PUBLIC_*` values are inlined by `next build`, so **changing one needs a redeploy**, not
-a restart. `frontend/.env.local` is not read by Vercel; the dashboard is the only source
-there.
+a restart. `CLERK_SECRET_KEY` is not inlined: it is read by the middleware on each request
+and must be present in the Vercel environment. `frontend/.env.local` is not read by Vercel;
+the dashboard is the only source there.
 
-**If the API is not deployed yet**, deploy the web app first and leave both variables unset.
-The build falls back to `http://localhost:5000`, so every page renders and `/design` works in
-full, but any call to the API reports "Cannot reach the Murmur API" and sign-in cannot
-complete. When the API has a URL, add the two variables and redeploy — one redeploy, not a
-new project.
+Clerk only issues a session token for the origins configured for its application. Add the
+Vercel production domain in the Clerk dashboard (and the preview domains, if previews should
+sign in), and make sure the API's `CLIENT_URL` is the same origin — that value is the
+authorized party the token is checked against.
+
+**Deploying the web app before the API exists** is still possible: leave `NEXT_PUBLIC_API_URL`
+and `NEXT_PUBLIC_SOCKET_URL` unset, and the build falls back to `http://localhost:5000`.
+Every page renders and `/design` works in full, but sign-in completes only against a local
+API, and remote pages report "Cannot reach the Murmur API". Add the two URLs and redeploy
+once the API has a host.
 
 ### API on Render
 
 `render.yaml` is a blueprint for the API: a Docker web service built from
-`backend/Dockerfile`, health-checked at `/api/health`, with `JWT_SECRET` generated by Render
-and the rest supplied on first deploy. Connect the repository as a Blueprint, or create a
-Docker service by hand with the same settings.
+`backend/Dockerfile`, health-checked at `/api/health`, with the Clerk and Mongo values
+supplied on first deploy. Connect the repository as a Blueprint, or create a Docker service
+by hand with the same settings.
 
 | Variable | Value |
 | --- | --- |
 | `NODE_ENV` | `production` |
 | `MONGO_URI` | the Atlas connection string |
-| `JWT_SECRET` | at least 32 random characters |
+| `CLERK_SECRET_KEY` | the same Clerk application's secret key |
+| `CLERK_PUBLISHABLE_KEY` | the matching publishable key |
+| `CLERK_JWT_KEY` | optional PEM public key for offline verification |
 | `CLIENT_URL` | the Vercel production URL, exactly, with no trailing slash |
-| `API_URL` | this service's own public URL |
+| `CLERK_AUTHORIZED_PARTIES` | optional extra origins, comma-separated (preview deployments) |
 | `CLOUDINARY_*` | the three values from Cloudinary, or empty to disable uploads |
 
 The service must stay at **one instance**. Socket.IO keeps its rooms in process memory, so a
@@ -300,24 +326,25 @@ adapter before scaling. A free Render instance sleeps when idle, which drops soc
 client reconnects and refetches the unread count when it does, so notifications sent while it
 was asleep are not replayed, only the badge catches up.
 
-### Cookies, CORS and the two URLs
+### CORS, Clerk and the two origins
 
-A Vercel host and a Render host are different sites, so the session cookie is a third-party
-cookie and must be `SameSite=None; Secure`. The API works that out itself: in production, if
-`API_URL` and `CLIENT_URL` have different hosts, `SameSite` becomes `none`, and `Secure`
-follows. `COOKIE_SAMESITE` overrides the guess if a proxy or custom domain confuses it.
+There is no session cookie in this design. The browser asks Clerk for a session token and
+sends it as `Authorization: Bearer …` on every API call and in the Socket.IO handshake, so
+the web app and the API can live on unrelated domains without `SameSite` or third-party
+cookie rules. `CLERK_SECRET_KEY` never reaches the browser; `CLERK_PUBLISHABLE_KEY` is
+public by design.
 
-The two failure modes are worth knowing:
+Two failure modes are worth knowing:
 
-- **`API_URL` left empty** → the hosts look the same to the API, the cookie is `Lax`, and
-  signing in appears to work while every later request is anonymous. The browser is
-  refusing to send the cookie cross-site.
-- **`CLIENT_URL` not exactly the frontend origin** → CORS blocks the request outright, and
-  the socket handshake is refused for the same reason.
+- **`CLIENT_URL` not exactly the frontend origin** → CORS blocks the request, the socket
+  handshake is refused, and Clerk's token is rejected because its `azp` claim is not an
+  authorized party.
+- **`CLERK_SECRET_KEY` / publishable key from different Clerk applications** → the API
+  cannot verify the frontend's token, so every request is a `401`.
 
-Preview deployments get their own hostnames (`<project>-<hash>.vercel.app`) and will be
-refused by a `CLIENT_URL` pinned to production. Either keep previews as read-only UI, or run
-a second API environment with `CLIENT_URL` set to the preview domain.
+Preview deployments get their own hostnames (`<project>-<hash>.vercel.app`). A `CLIENT_URL`
+pinned to production will refuse them; either keep previews as read-only UI, or add each
+preview origin to `CLERK_AUTHORIZED_PARTIES` and to Clerk's allowed origins.
 
 `GET /api/health` is the uptime check: `{ "status": "ok", "db": "connected" }` when Mongo is
 reachable. Every response also carries `X-Request-Id`, and the request log line starts with
@@ -326,13 +353,15 @@ the same id, so a report from production can be matched to a log entry.
 ### Docker
 
 ```bash
-cp backend/.env.example backend/.env     # fill in JWT_SECRET
+cp backend/.env.example backend/.env     # MONGO_URI and the Clerk keys
+# Clerk's publishable key is also needed at build time; put both in a root .env:
+#   CLERK_PUBLISHABLE_KEY=pk_test_...
+#   CLERK_SECRET_KEY=sk_test_...
 docker compose up --build                # MongoDB + API + web
 ```
 
 Open <http://localhost:3000>. The compose stack is a development stack on purpose: it serves
-plain HTTP on localhost, so the API runs with `NODE_ENV=development` and a non-`Secure`
-cookie. Production runs the same images behind HTTPS with `NODE_ENV=production`.
+plain HTTP on localhost. Production runs the same images behind HTTPS.
 
 Both images are multi-stage, run as the unprivileged `node` user and carry a `HEALTHCHECK`.
 The web image is a Next.js standalone build; its `NEXT_PUBLIC_*` values are build arguments:
@@ -340,7 +369,8 @@ The web image is a Next.js standalone build; its `NEXT_PUBLIC_*` values are buil
 ```bash
 docker build -t murmur-web frontend \
   --build-arg NEXT_PUBLIC_API_URL=https://api.example.com/api \
-  --build-arg NEXT_PUBLIC_SOCKET_URL=https://api.example.com
+  --build-arg NEXT_PUBLIC_SOCKET_URL=https://api.example.com \
+  --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...
 ```
 
 The API image is the one published by CI, so a VPS can run exactly the tested build:
@@ -348,8 +378,9 @@ The API image is the one published by CI, so a VPS can run exactly the tested bu
 ```bash
 docker run -d --name murmur-api -p 5000:5000 \
   -e NODE_ENV=production -e PORT=5000 \
-  -e MONGO_URI=... -e JWT_SECRET=... \
-  -e CLIENT_URL=https://murmur.example.com -e API_URL=https://api.example.com \
+  -e MONGO_URI=... -e CLERK_SECRET_KEY=sk_live_... \
+  -e CLERK_PUBLISHABLE_KEY=pk_live_... -e CLERK_JWT_KEY="$(cat clerk-jwt.pem)" \
+  -e CLIENT_URL=https://murmur.example.com \
   ghcr.io/<owner>/murmur-clone/api:<commit-sha>
 ```
 
@@ -360,7 +391,7 @@ docker run -d --name murmur-api -p 5000:5000 \
 | Job | Does |
 | --- | --- |
 | *API tests* | `npm ci`, a production `npm audit`, then the Jest suite on a real in-memory MongoDB (the binary is cached between runs) |
-| *Web tests, lint and build* | `npm ci`, a production `npm audit`, Jest, `next lint`, `next build` |
+| *Web tests, lint and build* | `npm ci`, a production `npm audit`, Jest, `next lint`, `next build` (with a well-formed dummy Clerk publishable key, since Clerk validates its shape) |
 | *Images build* | builds both Docker images without pushing, so a broken Dockerfile fails before merge |
 | *Publish the API image* | **default branch only**: pushes `ghcr.io/<repo>/api:<sha>` and `:latest` |
 | *Deploy the API* | **default branch only**: POSTs the Render deploy hook |
@@ -399,12 +430,7 @@ All routes are under `/api` and speak JSON. Errors always use
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/health` | no | `{ status: "ok", db: "connected" }` |
-| POST | `/api/auth/register` | no | username, email, password → `201 { user }` and a cookie |
-| POST | `/api/auth/login` | no | email, password → `200 { user }` and a cookie |
-| POST | `/api/auth/forgot-password` | no | email → `202 { message }`, identical for a known and an unknown address |
-| POST | `/api/auth/reset-password` | no | token, password → `200`; `400 INVALID_RESET_TOKEN` once spent or after 30 minutes |
-| POST | `/api/auth/logout` | yes | `204`, clears the cookie |
-| GET | `/api/auth/me` | yes | `200 { user }` |
+| GET | `/api/auth/me` | yes | `200 { user }`; creates the app profile on the first call |
 | GET | `/api/users/:username` | optional | Public profile with counts and `isFollowing` |
 | PATCH | `/api/users/me` | yes | multipart: `displayName`, `bio`, `image` |
 | POST | `/api/users/:id/follow` | yes | `200 { following: true }`, idempotent |
@@ -438,13 +464,14 @@ All routes are under `/api` and speak JSON. Errors always use
 | GET | `/api/users/search?q=` | yes | Up to 10 accounts matching a username prefix or display name |
 | GET | `/api/users/suggested` | yes | Up to 10 accounts the viewer does not follow, most followed first |
 
-**Password reset.** The emailed token is 32 random bytes and only its SHA-256 hash is stored,
-so a copy of the database cannot be replayed as working links. A link expires after 30 minutes
-and works once. A successful reset bumps the account's `tokenVersion`, and every JWT carries
-the generation it was signed with, so REST calls and socket handshakes from sessions opened
-before the change are rejected — a stolen cookie dies with the old password. With no SMTP
-server configured the API prints the link to its log and, outside production, also returns it
-as `resetUrl` so the flow works on a laptop.
+**Authentication.** Sign-up, sign-in, sign-out and password resets are Clerk's screens, not
+this API's routes. Every "yes" row above needs `Authorization: Bearer <Clerk session token>`.
+The token is verified by `clerkMiddleware` — locally when `CLERK_JWT_KEY` is set, otherwise
+against Clerk's cached JWKS — and its `azp` claim must be in `CLERK_AUTHORIZED_PARTIES`.
+The first verified request creates the app's `User` row: `clerkId` from the token's `sub`,
+email and handle from the token's custom claims (or from Clerk's Backend API when the claims
+are absent), with the handle de-duplicated. A row created before Clerk existed is adopted by
+the verified email, so its posts, followers and bookmarks survive the migration.
 
 **Response shapes.** Post lists, comment lists, user lists, notification lists, the inbox and
 message threads are all `{ items, nextCursor }`, where `nextCursor` is the last `_id` or
@@ -453,7 +480,7 @@ not by insertion, so it returns `nextCursor: null` and simply stops at 50 rather
 a cursor that could skip a conversation. A single post, a single comment and a single message
 are returned bare rather than wrapped in `{ post }` / `{ comment }` / `{ message }`, which is
 what the engineering docs show — this is the one place the API departs from the `{ user }`
-wrapper that the Phase 1 auth routes use.
+wrapper that `/api/auth/me` uses.
 
 Every post carries `likedByMe`, `repostedByMe` and `bookmarkedByMe`, computed per request.
 All three are live as of Phase 4: `repostedByMe` is resolved with one query per page, and it
@@ -479,9 +506,9 @@ remove the like notification; without a removal event an open notifications scre
 showing a row the server had already deleted. The `read` flag travels with it so a client
 knows whether to decrement the badge or just drop the row.
 
-The handshake carries the same httpOnly `token` cookie the REST API uses — no second
-credential, no token in a query string — and each socket joins a room named after its user
-id, so a push to one person is `io.to(userId)`.
+The handshake carries the same Clerk session token the REST client sends, in the connection's
+`auth.token` payload — no second credential, no token in a query string — and each socket
+joins a room named after its app user id, so a push to one person is `io.to(userId)`.
 
 Status codes in use: `400` (`SELF_FOLLOW`, `SELF_CONVERSATION`), `401`, `403`, `404`,
 `409` (`ALREADY_EXISTS`), `413`, `422` (`VALIDATION_FAILED`), `429` (`RATE_LIMITED`), `500`.
@@ -490,9 +517,8 @@ Status codes in use: `400` (`SELF_FOLLOW`, `SELF_CONVERSATION`), `401`, `403`, `
 
 | Field | Rule |
 | --- | --- |
-| `username` | 3 to 15 characters, letters/numbers/underscores, stored lowercase, unique |
-| `email` | valid address, stored lowercase, unique |
-| `password` | at least 8 characters |
+| `username` | 3 to 15 characters, letters/numbers/underscores, stored lowercase, unique. Assigned by the API from the Clerk profile; not user input |
+| `email` | valid address, stored lowercase, unique. Owned and verified by Clerk |
 | `bio` | up to 160 characters |
 | `displayName` | up to 50 characters |
 | `image` | JPEG, PNG, WebP or GIF, up to 5 MB |
@@ -510,10 +536,11 @@ Status codes in use: `400` (`SELF_FOLLOW`, `SELF_CONVERSATION`), `401`, `403`, `
 
 ## Data model
 
-`backend/models/User.js` matches the engineering docs: unique lowercase `username` and
-`email`, `password` with `select: false`, `displayName`, `profileImage { url, publicId }`,
-`bio`, and `followers` / `following` / `bookmarks` as ObjectId arrays, plus a text index
-on `username` and `displayName` that backs the search screen.
+`backend/models/User.js` keeps the engineering docs' profile fields — unique lowercase
+`username` and `email`, `displayName`, `profileImage { url, publicId }`, `bio`, and
+`followers` / `following` / `bookmarks` as ObjectId arrays — plus a sparse unique `clerkId`
+that links the row to the Clerk user. `password` and the reset-token fields are gone: Clerk
+owns them. The text index on `username` and `displayName` backs the search screen.
 
 `Post` matches the engineering docs: `author`, `content`, `images[]` (`{ url, publicId }`),
 `likes[]`, `likeCount`, `commentCount`, `repostCount`, `repostOf`, `createdAt` and
@@ -543,20 +570,21 @@ no endpoint reads it yet) and `createdAt`, with `{ conversation: 1, createdAt: -
 
 ## Security
 
-- bcrypt at cost 12; the hash never leaves the server and is stripped by `toJSON`
-- JWT (HS256) in an httpOnly cookie; `Secure` and `SameSite=None` only when the frontend
-  and API are on different hosts in production
-- CORS limited to `CLIENT_URL` with credentials on
+- No passwords, hashes or reset tokens are stored: Clerk owns credentials, so a copy of the
+  database cannot be replayed against the login form
+- Every request verifies a Clerk session token (`clerkMiddleware`), locally when
+  `CLERK_JWT_KEY` is set, and checks the token's `azp` against `CLERK_AUTHORIZED_PARTIES`
+- The session token stays inside Clerk's SDK, is attached per request as a bearer header,
+  and is never written to `localStorage` by the app
+- CORS limited to `CLIENT_URL`
 - helmet, `x-powered-by` removed, `express-mongo-sanitize` on all input
-- 10 KB JSON body limit; global 100 requests / 15 min, and 10 / 15 min on login and register
+- 10 KB JSON body limit; global 100 requests / 15 min
 - Upload type and size checked on the server, not only in the browser
 - Post text and bios render as text through React, never `dangerouslySetInnerHTML`
 - Ownership checks return 403 for someone else's document
-- The Socket.IO handshake re-verifies the same httpOnly JWT; a socket without one is refused
+- The Socket.IO handshake verifies the same Clerk token; a socket without one is refused
   before any handler runs, and a room is named after the user id rather than taken from the
   client, so one account cannot subscribe to another's pushes
-- Login answers identically for a wrong password and an unknown email, so the endpoint
-  cannot be used to enumerate accounts
 - Production dependencies are audited on every push (`npm audit --omit=dev`), and the
   deploy job only runs on a commit whose tests and image builds passed
 
@@ -568,18 +596,16 @@ npm --prefix backend test      # Jest + Supertest + mongodb-memory-server
 npm --prefix frontend test     # Jest on the pure lib modules
 ```
 
-Backend: 188 tests. Authentication and profiles (52): register (success, 422 field errors, 409
-for username and email, lowercase normalisation, hashing), login (success, 401 twice, 422),
-`/auth/me` (401 without a cookie, 401 for a tampered token, 200 with one), logout, the
-health check and its request id (generated, kept when the caller supplies a sane one,
-replaced when it does not), forgot-password (the same 202 for a known and an unknown address,
-only a hash stored, a 422 for a malformed email, the old password still working, and a new
-link replacing the old one),
-reset-password (the password swapped, the old one refused, the link spent, sessions opened
-before the reset rejected, an expired and an unknown token both a 400, and 422s),
-profile read (public, owner-only email, 404), profile edit (success, 422 for
-bio and display name, rejected non-image upload), plus unit tests for token helpers, the
-pagination cursor and `AppError`. Posts (30): create with text, with images, image-only,
+Backend: 170 tests. Authentication and profiles (33): `/auth/me` (401 with no token, a
+malformed one, a token signed with another key, an expired one, and one issued for another
+origin), first-call profile creation (the handle from the Clerk username, the email's local
+part as a fallback, a de-duplicated handle, display name and avatar from the token's claims,
+and the Clerk id never serialised), reuse on later calls, adoption of a row created before
+Clerk by its verified email, a bad token treated as anonymous on a public read, the health
+check and its request id (generated, kept when the caller supplies a sane one, replaced when
+it does not), profile read (public, owner-only email, 404), profile edit (success, 422 for
+bio and display name, rejected non-image upload), plus unit tests for the handle helpers,
+the pagination cursor and `AppError`. Posts (30): create with text, with images, image-only,
 422 for empty and over-length content, an unsupported type and an oversized file, orphan
 cleanup when a later upload fails, read and 404s, the public read paths, the user timeline
 with cursor pagination that new posts cannot shift, limit clamping, the feed, owner-only
@@ -599,7 +625,7 @@ removing their posts again, per-viewer flags on one post, and one account's feed
 leaking into another's); explore; and cursor hygiene (a malformed cursor is a 422 on every
 list endpoint instead of a 500).
 
-Advanced (53): reposts (the documented create, the original nested in `repostOf`,
+Advanced (54): reposts (the documented create, the original nested in `repostOf`,
 `repostCount` moving, a repeat POST answering the same repost rather than stacking a second,
 reposting a repost flattening to the original, `repostedByMe` true on both the original and a
 repost of it, and 204s that are safe to repeat); bookmarks (save, unsave, the list, paging,
@@ -613,22 +639,22 @@ same conversation twice returning one conversation, `SELF_CONVERSATION`, an unkn
 a malformed id, the inbox newest first with the other participant resolved, message paging, a
 non-participant getting 403, and empty or oversized text); and a Socket.IO suite that starts a
 real HTTP server and connects a real `socket.io-client` — rejecting a missing and an invalid
-cookie, accepting the REST cookie, and then proving the Phase 4 done-when by liking over REST
-and receiving `notification:new` on the author's socket, along with `notification:remove`,
-`post:counts`, a socket-sent message stored for both participants, a failed send returning an
-ack instead of throwing, typing reaching the peer only, and a cookie from before a password
-reset refused at the handshake.
+token, refusing one issued for another origin, accepting the same token the REST client uses,
+and then proving the Phase 4 done-when by liking over REST and receiving `notification:new` on
+the author's socket, along with `notification:remove`, `post:counts`, a socket-sent message
+stored for both participants, a failed send returning an ack instead of throwing, and typing
+reaching the peer only.
 
-Frontend: 112 tests over the pure modules — `compactNumber`, `relativeTime`,
-`joinedDate`, the client-side validators, the composer counter maths and `isPostable` with
-images, the image type/size/batch rules, the Cloudinary transform helper, the post list
-helpers (`flattenPages`, `isOwnPost`, `withoutPost`, `withLike`, `withCommentCount`,
-`withoutComment`, `withFollow`, `canFollow`, `displayedPost`, `isPlainRepost`, `withRepost`,
-`withBookmark`, `withCounts`), the notification cache helpers (`notificationText`,
-`notificationPhrase`, `notificationHref`, `prependNotification`, `withoutNotification`,
-`isUnread`, `bumpUnread`, `flattenNotifications`), the message helpers (`messagesInOrder`,
-`appendMessage`, `withLastMessage`, `dayKey`, `conversationLabel`), and the share helper's
-sheet, clipboard, cancellation and failure paths.
+Frontend: 104 tests over the pure modules — `compactNumber`, `relativeTime`,
+`joinedDate`, the profile validators (display name and bio), the composer counter maths and
+`isPostable` with images, the image type/size/batch rules, the Cloudinary transform helper,
+the post list helpers (`flattenPages`, `isOwnPost`, `withoutPost`, `withLike`,
+`withCommentCount`, `withoutComment`, `withFollow`, `canFollow`, `displayedPost`,
+`isPlainRepost`, `withRepost`, `withBookmark`, `withCounts`), the notification cache helpers
+(`notificationText`, `notificationPhrase`, `notificationHref`, `prependNotification`,
+`withoutNotification`, `isUnread`, `bumpUnread`, `flattenNotifications`), the message helpers
+(`messagesInOrder`, `appendMessage`, `withLastMessage`, `dayKey`, `conversationLabel`), and
+the share helper's sheet, clipboard, cancellation and failure paths.
 
 Component tests with React Testing Library and the Playwright end-to-end flow are still not
 part of `npm test`: the Jest config only collects `src/**/*.test.js`, and the browser surface
@@ -641,23 +667,37 @@ production frontend build, covering the whole Phase 4 surface including live del
 
 ## Notes and decisions
 
-- **`bcryptjs` instead of `bcrypt`.** Same `$2a$` format and the same cost factor 12,
-  but no native build step, which keeps `npm install` working on Windows and in Alpine
-  images without prompting. Swapping back is a one-line change in `models/User.js`.
-- **`bufferCommands` stays on.** The docs' "fail fast" intent is served by
-  `serverSelectionTimeoutMS`; disabling buffering races Mongoose's automatic model init
-  on connection open and crashed the first query on Windows.
+- **Clerk owns identity; MongoDB owns the profile.** Sign-up, sign-in, passwords, social
+  providers and resets live in Clerk, so the API stores no credential and cannot leak one.
+  The `User` row keeps the fields the rest of the app needs (handle, email, bio, avatar,
+  follow graph, bookmarks) and links to Clerk with a sparse unique `clerkId`.
+- **The app profile is created lazily.** `GET /api/auth/me` provisions the row on the first
+  verified request: the handle comes from the Clerk username when it fits the app's rule,
+  otherwise from the email's local part, and is de-duplicated. This means no webhook is
+  required to sign up, and a fresh local database works on the first page load. The trade-off
+  is that a rename in Clerk does not reach the app profile until the row is recreated; a
+  `user.updated` webhook is the follow-up if profile sync matters.
+- **Rows from before Clerk are adopted by email.** A `User` with no `clerkId` and the same
+  verified email is linked to the Clerk user instead of duplicated, so existing posts,
+  followers and bookmarks survive the switch.
+- **Bearer tokens, not cookies.** Clerk's session token is attached per request and sent in
+  the socket handshake's `auth.token`. Nothing is stored in `localStorage` by the app, and
+  the API sets no cookie, so the Vercel/Render split needs no `SameSite=None`, no
+  `credentials: true`, and no shared parent domain.
+- **Middleware checks the Clerk session, and the API checks it again.** `clerkMiddleware`
+  in the web app only decides whether to redirect to `/login`; the API verifies the token
+  itself on every request. A forged request never reaches a handler just because the page
+  rendered.
+- **One place handles a rejected session.** A `401` from the API (other than `/auth/me`)
+  signs the browser out of Clerk and sends it to `/login`, which avoids a redirect loop when
+  Clerk considers the session valid but the API does not (for example a preview origin that
+  is not an authorized party).
 - **Profiles are genuinely public.** The frontend route table marks `/[username]` as
   public, so `GET /api/users/:username` uses optional auth and returns "not found" for
   an unknown handle. Everything else under `/api/users` needs a session.
-- **`SameSite` is inferred, not hardcoded.** `none` is used only when `CLIENT_URL` and
-  `API_URL` are on different hosts in production; otherwise `lax`. `COOKIE_SAMESITE`
-  overrides it.
-- **Middleware checks for the cookie, not the token.** It cannot verify a JWT without
-  the secret, so it is a UX shortcut; the API re-verifies every request. Middleware does
-  not redirect signed-in users away from `/login` — with an expired cookie that would
-  bounce forever between `/` and `/login`. The login page redirects once
-  `/api/auth/me` confirms the session.
+- **`bufferCommands` stays on.** The docs' "fail fast" intent is served by
+  `serverSelectionTimeoutMS`; disabling buffering races Mongoose's automatic model init
+  on connection open and crashed the first query on Windows.
 - **Theme preference lives in `localStorage` for now.** The settings page writes
   `data-theme` on `<html>` and `_document.jsx` applies it before paint to avoid a flash.
   The design doc suggests storing it on the profile; the `User` schema has no field for

@@ -1,12 +1,17 @@
 # The local stack: MongoDB, the API and the web app, all in containers.
 #
-#   cp backend/.env.example backend/.env      # fill in JWT_SECRET
+# Clerk is the identity provider, so two values are needed before building:
+# put them in a root .env (ignored by git) or export them in the shell.
+#
+#   CLERK_PUBLISHABLE_KEY=pk_test_...
+#   CLERK_SECRET_KEY=sk_test_...
+#
+#   cp backend/.env.example backend/.env      # MONGO_URI, Clerk, Cloudinary
 #   docker compose up --build
 #
 # Then open http://localhost:3000. This is a development stack on purpose: it
-# runs plain HTTP on localhost, so the API must not mark its cookie Secure or
-# Safari will drop it. Production sets NODE_ENV=production and the same image
-# behind HTTPS.
+# runs plain HTTP on localhost. The browser sends a Clerk bearer token, so no
+# cookie is involved and the two origins do not need to share a site.
 name: murmur
 
 services:
@@ -27,7 +32,7 @@ services:
   api:
     build: ./backend
     restart: unless-stopped
-    # Holds JWT_SECRET, and the Cloudinary trio if uploads should work.
+    # Holds CLERK_SECRET_KEY, and the Cloudinary trio if uploads should work.
     env_file:
       - ./backend/.env
     environment:
@@ -37,7 +42,6 @@ services:
       MONGO_URI: mongodb://mongo:27017/murmur
       # The browser's origin, which is what CORS and the socket handshake check.
       CLIENT_URL: ${WEB_ORIGIN:-http://localhost:3000}
-      API_URL: ${API_ORIGIN:-http://localhost:5000}
     ports:
       - "5000:5000"
     depends_on:
@@ -51,7 +55,13 @@ services:
         # Inlined at build time, so these are the URLs the browser will call.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000/api}
         NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost:5000}
+        # Clerk's publishable key is public by design and is inlined too.
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
     restart: unless-stopped
+    environment:
+      # Server-side only: Clerk's middleware verifies the session on each page
+      # request. It is not inlined into the browser bundle.
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
     ports:
       - "3000:3000"
     depends_on:

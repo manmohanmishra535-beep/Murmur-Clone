@@ -1,29 +1,40 @@
 import { NextResponse } from "next/server";
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 
 // Routes that need a session. Profiles (/:username) and /design stay public.
-const isProtected = createRouteMatcher([
-  "/",
-  "/explore(.*)",
-  "/notifications(.*)",
-  "/messages(.*)",
-  "/bookmarks(.*)",
-  "/settings(.*)",
-]);
+// This is a UX redirect, not the security boundary: the API verifies the Clerk
+// token on every request.
+const PROTECTED = [
+  /^\/$/,
+  /^\/explore(?:\/|$)/,
+  /^\/notifications(?:\/|$)/,
+  /^\/messages(?:\/|$)/,
+  /^\/bookmarks(?:\/|$)/,
+  /^\/settings(?:\/|$)/,
+];
 
-/**
- * Clerk's middleware refreshes the session and exposes it to this callback.
- * The redirect is a UX shortcut; the API verifies the bearer token on every
- * request, so this is not the security boundary.
- */
+function isProtected(pathname) {
+  return PROTECTED.some((pattern) => pattern.test(pathname));
+}
+
 export default clerkMiddleware(async (auth, request) => {
-  if (!isProtected(request)) return;
+  const { pathname, search } = request.nextUrl;
+
+  // Password resets are Clerk's job now. Old emailed links and bookmarks point
+  // at these paths; without this they would fall through to /[username].
+  if (pathname === "/forgot-password" || pathname === "/reset-password") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  if (!isProtected(pathname)) return;
 
   const { userId } = await auth();
   if (userId) return;
 
   const url = request.nextUrl.clone();
-  const { pathname, search } = request.nextUrl;
   url.pathname = "/login";
   url.search = "";
   if (pathname !== "/") url.searchParams.set("next", `${pathname}${search}`);

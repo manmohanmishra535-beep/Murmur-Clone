@@ -18,17 +18,25 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: JWT_EXPIRES_IN
-        value: 7d
-      # Render generates this once; assertConfig rejects anything under 32 chars.
-      - key: JWT_SECRET
-        generateValue: true
       # Filled in on the first deploy, then managed in the dashboard.
       - key: MONGO_URI
         sync: false
+      # Clerk: the same application the web app uses. The secret key is
+      # server-only and must never be given a NEXT_PUBLIC_ name.
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      # Optional. The PEM public key from the Clerk API keys page; with it,
+      # session tokens are verified without calling Clerk on each request.
+      - key: CLERK_JWT_KEY
+        sync: false
+      # The web app's origin. It is the only allowed CORS origin, the socket
+      # origin, and the default Clerk authorized party.
       - key: CLIENT_URL
         sync: false
-      - key: API_URL
+      # Comma-separated extra origins (Vercel previews) whose tokens are allowed.
+      - key: CLERK_AUTHORIZED_PARTIES
         sync: false
       - key: CLOUDINARY_CLOUD_NAME
         sync: false

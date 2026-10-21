@@ -61,9 +61,12 @@ jobs:
         working-directory: frontend
     env:
       # Dummy origins: the build only needs them to be defined. The deploy
-      # pipeline rebuilds with the real ones.
+      # pipeline rebuilds with the real ones. Clerk's publishable key is
+      # validated for shape at build time, so a well-formed test key is enough;
+      # nothing is sent to Clerk while rendering.
       NEXT_PUBLIC_API_URL: http://localhost:5000/api
       NEXT_PUBLIC_SOCKET_URL: http://localhost:5000
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC1jbGVyay5leGFtcGxlLmNvbSQ=
     steps:
       - uses: actions/checkout@v4
 
@@ -114,6 +117,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.example.test/api
             NEXT_PUBLIC_SOCKET_URL=https://api.example.test
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_dGVzdC1jbGVyay5leGFtcGxlLmNvbSQ=
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 

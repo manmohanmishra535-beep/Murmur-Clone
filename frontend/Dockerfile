@@ -3,6 +3,8 @@
 #
 # NEXT_PUBLIC_* values are inlined by `next build`, so they are build arguments,
 # not runtime variables. Changing one means rebuilding the image.
+# NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY must be a real key: without it the image
+# still builds, but the browser cannot start a Clerk session.
 FROM node:20-alpine AS deps
 
 WORKDIR /app
@@ -20,9 +22,11 @@ COPY . .
 
 ARG NEXT_PUBLIC_API_URL=http://localhost:5000/api
 ARG NEXT_PUBLIC_SOCKET_URL=http://localhost:5000
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
 
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
