@@ -1,343 +1,167 @@
 "use strict";
 
+const crypto = require("crypto");
 const User = require("../models/User");
-const { agent, anonymous, registerUser, findCookie, VALID_USER } = require("./helpers");
-
-describe("POST /api/auth/register", () => {
-  it("creates a user, returns 201 and sets the token cookie", async () => {
-    const client = agent();
-
-    const res = await client.post("/api/auth/register").send(VALID_USER);
-
-    expect(res.status).toBe(201);
-    expect(res.body.user).toMatchObject({
-      username: "priya",
-      displayName: "priya",
-      email: "priya@example.com",
-      followerCount: 0,
-      followingCount: 0,
-    });
-    expect(res.body.user._id).toBeDefined();
-
-    const cookie = findCookie(res, "token");
-    expect(cookie).toBeTruthy();
-    expect(cookie).toMatch(/HttpOnly/i);
-  });
-
-  it("never stores the password in plain text and never returns it", async () => {
-    await registerUser();
-
-    const stored = await User.findOne({ username: "priya" }).select("+password");
-    expect(stored.password).not.toBe(VALID_USER.password);
-    expect(stored.password.startsWith("$2")).toBe(true);
-    expect(stored.password.length).toBeGreaterThan(50);
-  });
-
-  it("returns 422 with per-field messages for invalid input", async () => {
-    const res = await anonymous().post("/api/auth/register").send({
-      username: "p!",
-      email: "not-an-email",
-      password: "short",
-    });
-
-    expect(res.status).toBe(422);
-    expect(res.body.error.code).toBe("VALIDATION_FAILED");
-    expect(res.body.error.fields).toMatchObject({
-      username: expect.any(String),
-      email: expect.any(String),
-      password: expect.any(String),
-    });
-  });
-
-  it("returns 409 when the username is taken", async () => {
-    await registerUser();
-
-    const res = await anonymous()
-      .post("/api/auth/register")
-      .send({ ...VALID_USER, email: "other@example.com" });
-
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe("ALREADY_EXISTS");
-    expect(res.body.error.fields.username).toBeDefined();
-  });
-
-  it("returns 409 when the email is taken", async () => {
-    await registerUser();
-
-    const res = await anonymous()
-      .post("/api/auth/register")
-      .send({ ...VALID_USER, username: "someone_else" });
-
-    expect(res.status).toBe(409);
-    expect(res.body.error.fields.email).toBeDefined();
-  });
-
-  it("lowercases the username and email", async () => {
-    const res = await anonymous().post("/api/auth/register").send({
-      username: "Priya_Nair",
-      email: "Priya@Example.com",
-      password: "password123",
-    });
-
-    expect(res.status).toBe(201);
-    expect(res.body.user.username).toBe("priya_nair");
-    expect(res.body.user.email).toBe("priya@example.com");
-  });
-});
-
-describe("POST /api/auth/login", () => {
-  it("returns 200 and a cookie for correct credentials", async () => {
-    await registerUser();
-
-    const res = await anonymous()
-      .post("/api/auth/login")
-      .send({ email: VALID_USER.email, password: VALID_USER.password });
-
-    expect(res.status).toBe(200);
-    expect(res.body.user.username).toBe("priya");
-    expect(findCookie(res, "token")).toBeTruthy();
-  });
-
-  it("returns 401 for a wrong password", async () => {
-    await registerUser();
-
-    const res = await anonymous()
-      .post("/api/auth/login")
-      .send({ email: VALID_USER.email, password: "wrong-password" });
-
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe("INVALID_CREDENTIALS");
-  });
-
-  it("returns 401 for an unknown email without revealing it", async () => {
-    const res = await anonymous()
-      .post("/api/auth/login")
-      .send({ email: "nobody@example.com", password: "password123" });
-
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe("INVALID_CREDENTIALS");
-  });
-
-  it("returns 422 when fields are missing", async () => {
-    const res = await anonymous().post("/api/auth/login").send({});
-
-    expect(res.status).toBe(422);
-    expect(res.body.error.fields).toMatchObject({
-      email: expect.any(String),
-      password: expect.any(String),
-    });
-  });
-});
+const { agent, anonymous, registerUser, clerkToken, signJwt } = require("./helpers");
 
 describe("GET /api/auth/me", () => {
-  it("returns 401 without a cookie", async () => {
+  it("returns 401 without a token", async () => {
     const res = await anonymous().get("/api/auth/me");
 
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe("UNAUTHENTICATED");
   });
 
-  it("returns 401 for a tampered token", async () => {
+  it("returns 401 for something that is not a token", async () => {
     const res = await anonymous()
       .get("/api/auth/me")
-      .set("Cookie", "token=not.a.real.token");
+      .set("Authorization", "Bearer not.a.real.token");
 
     expect(res.status).toBe(401);
   });
 
-  it("returns the current user with the cookie", async () => {
-    const { client } = await registerUser();
-
-    const res = await client.get("/api/auth/me");
-
-    expect(res.status).toBe(200);
-    expect(res.body.user).toMatchObject({ username: "priya", email: VALID_USER.email });
-  });
-});
-
-describe("POST /api/auth/logout", () => {
-  it("returns 204, clears the cookie and ends the session", async () => {
-    const { client } = await registerUser();
-
-    const logout = await client.post("/api/auth/logout");
-    expect(logout.status).toBe(204);
-
-    const cleared = findCookie(logout, "token");
-    expect(cleared).toBeTruthy();
-    expect(cleared).toMatch(/token=;|Expires=Thu, 01 Jan 1970/i);
-
-    const me = await client.get("/api/auth/me");
-    expect(me.status).toBe(401);
-  });
-
-  it("returns 401 when nobody is logged in", async () => {
-    const res = await anonymous().post("/api/auth/logout");
-    expect(res.status).toBe(401);
-  });
-});
-
-describe("POST /api/auth/forgot-password", () => {
-  /** The API answers with the reset link outside production; tests use it. */
-  async function requestReset(email = VALID_USER.email) {
-    const res = await anonymous().post("/api/auth/forgot-password").send({ email });
-    return res;
-  }
-
-  function tokenFrom(res) {
-    return new URL(res.body.resetUrl).searchParams.get("token");
-  }
-
-  it("answers 202 with the same message for a known and an unknown address", async () => {
-    await registerUser();
-
-    const known = await requestReset();
-    const unknown = await requestReset("nobody@example.com");
-
-    expect(known.status).toBe(202);
-    expect(unknown.status).toBe(202);
-    expect(known.body.message).toBe(unknown.body.message);
-    expect(known.body.message).toMatch(/if an account exists/i);
-  });
-
-  it("stores only a hash of the token, never the token itself", async () => {
-    await registerUser();
-
-    const token = tokenFrom(await requestReset());
-    const stored = await User.findOne({ username: "priya" }).select(
-      "+resetTokenHash +resetTokenExpiresAt"
+  it("returns 401 for a token signed with another key", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const forged = signJwt(
+      {
+        sub: "user_forged",
+        sid: "sess_forged",
+        azp: "http://localhost:3000",
+        iat: now,
+        nbf: now,
+        exp: now + 3600,
+      },
+      privateKey
     );
 
-    expect(token).toMatch(/^[a-f0-9]{64}$/);
-    expect(stored.resetTokenHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(stored.resetTokenHash).not.toBe(token);
-    expect(stored.resetTokenExpiresAt.getTime()).toBeGreaterThan(Date.now());
-    // The document that comes back from a normal query never carries these.
-    const plain = await User.findOne({ username: "priya" });
-    expect(plain.resetTokenHash).toBeUndefined();
+    const res = await anonymous().get("/api/auth/me").set("Authorization", `Bearer ${forged}`);
+
+    expect(res.status).toBe(401);
   });
 
-  it("leaves the current password working until the link is used", async () => {
-    await registerUser();
-    await requestReset();
+  it("returns 401 for an expired token", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = clerkToken("user_expired", {
+      email: "expired@example.com",
+      iat: now - 120,
+      nbf: now - 120,
+      exp: now - 60,
+    });
 
-    const res = await anonymous()
-      .post("/api/auth/login")
-      .send({ email: VALID_USER.email, password: VALID_USER.password });
+    const res = await agent(token).get("/api/auth/me");
+
+    expect(res.status).toBe(401);
+    expect(await User.countDocuments({ clerkId: "user_expired" })).toBe(0);
+  });
+
+  it("returns 401 for a token issued for another origin", async () => {
+    const token = clerkToken("user_elsewhere", {
+      email: "elsewhere@example.com",
+      azp: "https://evil.example.com",
+    });
+
+    const res = await agent(token).get("/api/auth/me");
+
+    expect(res.status).toBe(401);
+  });
+
+  it("creates the app profile on first use", async () => {
+    const token = clerkToken("user_new", {
+      email: "new@example.com",
+      username: "newbie",
+      name: "New Bie",
+      image_url: "https://img.clerk.com/new.png",
+    });
+
+    const res = await agent(token).get("/api/auth/me");
 
     expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({
+      username: "newbie",
+      displayName: "New Bie",
+      email: "new@example.com",
+      profileImage: { url: "https://img.clerk.com/new.png" },
+      followerCount: 0,
+      followingCount: 0,
+    });
+    // Clerk's id stays on the server; the app's own id is what the client uses.
+    expect(res.body.user.clerkId).toBeUndefined();
+
+    const stored = await User.findOne({ clerkId: "user_new" });
+    expect(stored).toBeTruthy();
+    expect(stored.username).toBe("newbie");
   });
 
-  it("returns 422 for a malformed email", async () => {
-    const res = await requestReset("not-an-address");
+  it("returns the same profile on every later call", async () => {
+    const token = clerkToken("user_same", {
+      email: "same@example.com",
+      username: "same",
+    });
 
-    expect(res.status).toBe(422);
-    expect(res.body.error.code).toBe("VALIDATION_FAILED");
-    expect(res.body.error.fields.email).toBeDefined();
+    const first = await agent(token).get("/api/auth/me");
+    const second = await agent(token).get("/api/auth/me");
+
+    expect(second.status).toBe(200);
+    expect(second.body.user._id).toBe(first.body.user._id);
+    expect(await User.countDocuments({ clerkId: "user_same" })).toBe(1);
   });
 
-  it("replaces an earlier link when a new one is requested", async () => {
-    await registerUser();
+  it("falls back to the email's local part when Clerk has no username", async () => {
+    const token = clerkToken("user_nouser", { email: "quiet.person@example.com" });
 
-    const first = tokenFrom(await requestReset());
-    const second = tokenFrom(await requestReset());
-    expect(second).not.toBe(first);
+    const res = await agent(token).get("/api/auth/me");
 
-    const res = await anonymous()
-      .post("/api/auth/reset-password")
-      .send({ token: first, password: "brand-new-pass" });
-
-    expect(res.status).toBe(400);
-  });
-});
-
-describe("POST /api/auth/reset-password", () => {
-  async function linkToken() {
-    const res = await anonymous()
-      .post("/api/auth/forgot-password")
-      .send({ email: VALID_USER.email });
-    return new URL(res.body.resetUrl).searchParams.get("token");
-  }
-
-  it("changes the password, spends the link and does not sign the caller in", async () => {
-    await registerUser();
-    const token = await linkToken();
-
-    const reset = await anonymous()
-      .post("/api/auth/reset-password")
-      .send({ token, password: "brand-new-pass" });
-
-    expect(reset.status).toBe(200);
-    expect(findCookie(reset, "token")).toBeNull();
-
-    const oldPassword = await anonymous()
-      .post("/api/auth/login")
-      .send({ email: VALID_USER.email, password: VALID_USER.password });
-    expect(oldPassword.status).toBe(401);
-
-    const newPassword = await anonymous()
-      .post("/api/auth/login")
-      .send({ email: VALID_USER.email, password: "brand-new-pass" });
-    expect(newPassword.status).toBe(200);
-
-    // A reset link is single use.
-    const reused = await anonymous()
-      .post("/api/auth/reset-password")
-      .send({ token, password: "even-newer-pass" });
-    expect(reused.status).toBe(400);
-    expect(reused.body.error.code).toBe("INVALID_RESET_TOKEN");
+    expect(res.status).toBe(200);
+    expect(res.body.user.username).toBe("quiet_person");
+    expect(res.body.user.displayName).toBe("quiet_person");
   });
 
-  it("logs out sessions opened before the reset", async () => {
-    const { client } = await registerUser();
-    const token = await linkToken();
+  it("adds a suffix when the preferred handle is taken", async () => {
+    await User.create({ username: "priya", email: "taken@example.com" });
 
-    await anonymous().post("/api/auth/reset-password").send({ token, password: "brand-new-pass" });
+    const token = clerkToken("user_dup", {
+      email: "dup@example.com",
+      username: "priya",
+    });
+    const res = await agent(token).get("/api/auth/me");
 
-    const me = await client.get("/api/auth/me");
-    expect(me.status).toBe(401);
-    expect(me.body.error.code).toBe("UNAUTHENTICATED");
+    expect(res.status).toBe(200);
+    expect(res.body.user.username).toBe("priya2");
   });
 
-  it("rejects an expired link", async () => {
+  it("adopts a profile created before Clerk, by verified email", async () => {
+    const legacy = await User.create({
+      username: "olduser",
+      email: "legacy@example.com",
+      bio: "Here first.",
+    });
+
+    const token = clerkToken("user_legacy", {
+      email: "legacy@example.com",
+      username: "legacy",
+    });
+    const res = await agent(token).get("/api/auth/me");
+
+    expect(res.status).toBe(200);
+    expect(res.body.user._id).toBe(String(legacy._id));
+    expect(res.body.user.bio).toBe("Here first.");
+
+    const stored = await User.findById(legacy._id);
+    expect(stored.clerkId).toBe("user_legacy");
+    // The old handle is kept: it may already be in links and mentions.
+    expect(stored.username).toBe("olduser");
+  });
+
+  it("treats a bad token as anonymous on a public read", async () => {
     const { user } = await registerUser();
-    const token = await linkToken();
-
-    await User.updateOne(
-      { _id: user._id },
-      { $set: { resetTokenExpiresAt: new Date(Date.now() - 60 * 1000) } }
-    );
 
     const res = await anonymous()
-      .post("/api/auth/reset-password")
-      .send({ token, password: "brand-new-pass" });
+      .get(`/api/users/${user.username}`)
+      .set("Authorization", "Bearer nonsense");
 
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("INVALID_RESET_TOKEN");
-  });
-
-  it("rejects an unknown token with the same answer", async () => {
-    const res = await anonymous()
-      .post("/api/auth/reset-password")
-      .send({ token: "a".repeat(64), password: "brand-new-pass" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("INVALID_RESET_TOKEN");
-  });
-
-  it("returns 422 when the new password is too short or the token is missing", async () => {
-    const short = await anonymous()
-      .post("/api/auth/reset-password")
-      .send({ token: "a".repeat(64), password: "short" });
-
-    expect(short.status).toBe(422);
-    expect(short.body.error.fields.password).toBeDefined();
-
-    const missing = await anonymous()
-      .post("/api/auth/reset-password")
-      .send({ password: "brand-new-pass" });
-
-    expect(missing.status).toBe(422);
-    expect(missing.body.error.fields.token).toBeDefined();
+    expect(res.status).toBe(200);
+    expect(res.body.user.username).toBe("priya");
   });
 });
 

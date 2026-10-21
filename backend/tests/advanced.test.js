@@ -10,10 +10,10 @@ const Post = require("../models/Post");
 const User = require("../models/User");
 const { attach } = require("../realtime/io");
 const { setIO } = require("../realtime/emitter");
-const { app, anonymous, registerUser, findCookie } = require("./helpers");
+const { app, anonymous, registerUser, clerkToken } = require("./helpers");
 
-const SECOND = { username: "arjun", email: "arjun@example.com", password: "password123" };
-const THIRD = { username: "meera", email: "meera@example.com", password: "password123" };
+const SECOND = { username: "arjun", email: "arjun@example.com" };
+const THIRD = { username: "meera", email: "meera@example.com" };
 
 /** Create a text post and return the serialized body. */
 async function post(client, content) {
@@ -682,15 +682,14 @@ describe("realtime", () => {
   });
 
   /**
-   * Connect with the same httpOnly token cookie the REST API handed out.
-   * `registerUser` returns the register response, which carries it.
+   * Connect with the same Clerk session token the REST client sends.
+   * `registerUser` returns it as `session.token`.
    */
-  function connect(session, headerCookie) {
-    const cookie =
-      headerCookie === undefined && session ? findCookie(session.res, "token") : headerCookie;
+  function connect(session, token) {
+    const credential = token === undefined && session ? session.token : token;
     const socket = ioClient(url, {
       transports: ["websocket"],
-      extraHeaders: cookie ? { cookie } : {},
+      auth: credential ? { token: credential } : {},
       reconnection: false,
     });
     return new Promise((resolve, reject) => {
@@ -713,37 +712,30 @@ describe("realtime", () => {
     });
   }
 
-  it("rejects a handshake with no token cookie", async () => {
+  it("rejects a handshake with no token", async () => {
     await expect(connect(null)).rejects.toThrow("UNAUTHENTICATED");
   });
 
   it("rejects a handshake whose token is not a real one", async () => {
-    await expect(connect(null, "token=not.a.token")).rejects.toThrow("UNAUTHENTICATED");
+    await expect(connect(null, "not.a.token")).rejects.toThrow("UNAUTHENTICATED");
   });
 
-  it("accepts the same cookie the REST API issued", async () => {
+  it("accepts the same Clerk token the REST client sends", async () => {
     const author = await registerUser();
     const socket = await connect(author);
     expect(socket.connected).toBe(true);
     socket.close();
   });
 
-  it("refuses a socket whose cookie predates a password reset", async () => {
+  it("refuses a token issued for another origin", async () => {
     const author = await registerUser();
-    const staleCookie = findCookie(author.res, "token");
+    const foreign = clerkToken(author.clerkId, {
+      email: author.payload.email,
+      username: author.payload.username,
+      azp: "https://evil.example.com",
+    });
 
-    const forgot = await anonymous()
-      .post("/api/auth/forgot-password")
-      .send({ email: author.payload.email });
-    const token = new URL(forgot.body.resetUrl).searchParams.get("token");
-
-    await anonymous()
-      .post("/api/auth/reset-password")
-      .send({ token, password: "brand-new-pass" });
-
-    // The handshake runs the same generation check as req.user, so an open
-    // session cannot outlive the password it was authenticated with.
-    await expect(connect(null, staleCookie)).rejects.toThrow("UNAUTHENTICATED");
+    await expect(connect(null, foreign)).rejects.toThrow("UNAUTHENTICATED");
   });
 
   it("pushes notification:new when someone likes your post, with no refresh", async () => {

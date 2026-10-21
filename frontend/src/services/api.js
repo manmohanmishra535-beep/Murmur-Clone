@@ -3,27 +3,42 @@ import axios from "axios";
 /**
  * The only Axios instance in the app. Components never call Axios directly;
  * they go through a service, which goes through this.
- * withCredentials sends the httpOnly token cookie on every request.
+ *
+ * Clerk's session token is attached as a bearer header. Nothing is stored in
+ * localStorage and no cookie is sent, which keeps the API and the web app on
+ * separate origins without any cross-site cookie configuration.
  */
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api",
-  withCredentials: true,
   timeout: 15000,
   headers: { Accept: "application/json" },
 });
 
+let tokenGetter = null;
 let unauthorizedHandler = null;
+
+/** AuthProvider registers Clerk's getToken on mount. */
+export function setTokenGetter(getter) {
+  tokenGetter = getter;
+}
 
 /** AuthProvider registers the "session ended" behaviour on mount. */
 export function setUnauthorizedHandler(handler) {
   unauthorizedHandler = handler;
 }
 
+api.interceptors.request.use(async (config) => {
+  if (!tokenGetter) return config;
+  const token = await tokenGetter();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response && error.response.status;
-    // A 401 on /auth/me or /auth/login is expected and must not redirect.
+    // A 401 on /auth/me is expected during hydration and must not redirect.
     if (status === 401 && !error.config?.skipAuthRedirect && unauthorizedHandler) {
       unauthorizedHandler();
     }

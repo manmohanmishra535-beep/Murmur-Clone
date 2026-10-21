@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { patchCachedPost } from "@/hooks/usePostActions";
@@ -42,6 +43,7 @@ function moveUnread(queryClient, delta) {
  */
 export function SocketProvider({ children }) {
   const { user, status } = useAuth();
+  const { getToken } = useClerkAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [socket, setSocket] = useState(null);
@@ -53,14 +55,22 @@ export function SocketProvider({ children }) {
   useEffect(() => {
     if (status !== "authenticated" || !userId) return undefined;
 
-    // The handshake carries the same httpOnly token cookie the REST API uses,
-    // because withCredentials sends cookies on the upgrade request.
-    const instance = io(SOCKET_URL, {
-      withCredentials: true,
+    let cancelled = false;
+    let instance = null;
+
+    // auth can be a function, so every (re)connect asks Clerk for a current
+    // token instead of replaying the one from when the page loaded.
+    instance = io(SOCKET_URL, {
+      auth: (callback) => {
+        getToken()
+          .then((token) => callback(token ? { token } : {}))
+          .catch(() => callback({}));
+      },
       transports: ["websocket", "polling"],
     });
 
     instance.on("connect", () => {
+      if (cancelled) return;
       setConnected(true);
       // Anything pushed while the socket was down was missed, so the badge is
       // refetched on a reconnection. The first connect is skipped: the query has
@@ -107,12 +117,13 @@ export function SocketProvider({ children }) {
     setSocket(instance);
 
     return () => {
+      cancelled = true;
       hasConnected.current = false;
       setSocket(null);
       setConnected(false);
       instance.close();
     };
-  }, [status, userId, queryClient, toast]);
+  }, [status, userId, getToken, queryClient, toast]);
 
   /** Typing is presence only: it is forwarded to the other participant. */
   const setTyping = useCallback(

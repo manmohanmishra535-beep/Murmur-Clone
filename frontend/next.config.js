@@ -15,9 +15,10 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
-    // Cloudinary is the only remote image host in v1.
+    // Cloudinary holds uploads; Clerk serves the default avatar for an account.
     remotePatterns: [
       { protocol: "https", hostname: "res.cloudinary.com" },
+      { protocol: "https", hostname: "img.clerk.com" },
     ],
   },
 };

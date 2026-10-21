@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
+import { ClerkProvider } from "@clerk/nextjs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import "@/styles/tokens.css";
@@ -32,28 +33,30 @@ export default function App({ Component, pageProps }) {
   const bare = BARE_ROUTES.has(router.pathname);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <ToastProvider>
-          <SocketProvider>
-            <Head>
-              <meta name="viewport" content="width=device-width, initial-scale=1" />
-              <meta
-                name="description"
-                content="Murmur is a quiet, text-first microblogging app."
-              />
-            </Head>
+    <ClerkProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ToastProvider>
+            <SocketProvider>
+              <Head>
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <meta
+                  name="description"
+                  content="Murmur is a quiet, text-first microblogging app."
+                />
+              </Head>
 
-            {bare ? (
-              <Component {...pageProps} />
-            ) : (
-              <AppShell>
+              {bare ? (
                 <Component {...pageProps} />
-              </AppShell>
-            )}
-          </SocketProvider>
-        </ToastProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+              ) : (
+                <AppShell>
+                  <Component {...pageProps} />
+                </AppShell>
+              )}
+            </SocketProvider>
+          </ToastProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ClerkProvider>
   );
 }

@@ -1,38 +1,37 @@
 import { NextResponse } from "next/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Routes that need a session. Profiles (/:username) and /design stay public.
-const REQUIRED = ["/", "/explore", "/notifications", "/messages", "/bookmarks", "/settings"];
-
-function needsAuth(pathname) {
-  return REQUIRED.some(
-    (path) => pathname === path || (path !== "/" && pathname.startsWith(`${path}/`))
-  );
-}
+const isProtected = createRouteMatcher([
+  "/",
+  "/explore(.*)",
+  "/notifications(.*)",
+  "/messages(.*)",
+  "/bookmarks(.*)",
+  "/settings(.*)",
+]);
 
 /**
- * Cookie presence is the only check middleware can make without the JWT secret.
- * It does not redirect signed-in users away from /login: an expired cookie
- * would then bounce forever between "/" and "/login". The login page itself
- * redirects once /api/auth/me confirms the session.
- *
- * The API verifies the token on every request, so this is a UX shortcut rather
- * than a security boundary.
+ * Clerk's middleware refreshes the session and exposes it to this callback.
+ * The redirect is a UX shortcut; the API verifies the bearer token on every
+ * request, so this is not the security boundary.
  */
-export function middleware(request) {
+export default clerkMiddleware(async (auth, request) => {
+  if (!isProtected(request)) return;
+
+  const { userId } = await auth();
+  if (userId) return;
+
+  const url = request.nextUrl.clone();
   const { pathname, search } = request.nextUrl;
-  const hasToken = Boolean(request.cookies.get("token"));
-
-  if (needsAuth(pathname) && !hasToken) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = `?next=${encodeURIComponent(pathname + search)}`;
-    return NextResponse.redirect(url);
-  }
-
-  return NextResponse.next();
-}
+  url.pathname = "/login";
+  url.search = "";
+  if (pathname !== "/") url.searchParams.set("next", `${pathname}${search}`);
+  return NextResponse.redirect(url);
+});
 
 export const config = {
-  // Skip API routes, Next internals and anything with a file extension.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+  // Everything except Next internals and files with an extension (the hashed
+  // JS/CSS, the favicon, uploaded images).
+  matcher: ["/((?!_next|.*\\..*).*)"],
 };

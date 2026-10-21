@@ -3,10 +3,10 @@
 const Comment = require("../models/Comment");
 const Post = require("../models/Post");
 const User = require("../models/User");
-const { agent, anonymous, registerUser } = require("./helpers");
+const { anonymous, registerUser } = require("./helpers");
 
-const SECOND = { username: "arjun", email: "arjun@example.com", password: "password123" };
-const THIRD = { username: "meera", email: "meera@example.com", password: "password123" };
+const SECOND = { username: "arjun", email: "arjun@example.com" };
+const THIRD = { username: "meera", email: "meera@example.com" };
 
 /** Create a text post and return the serialized body. */
 async function post(client, content) {
@@ -681,23 +681,13 @@ describe("cursor hygiene", () => {
 });
 
 describe("social writes are session-scoped", () => {
-  it("stops two separate sessions from sharing a cookie jar", async () => {
-    const first = agent();
-    const second = agent();
+  it("keeps two signed-in people apart", async () => {
+    const first = await registerUser({ username: "sam", email: "sam@example.com" });
+    const second = await registerUser({ username: "rina", email: "rina@example.com" });
 
-    await first.post("/api/auth/register").send({
-      username: "sam",
-      email: "sam@example.com",
-      password: "password123",
-    });
-    await second.post("/api/auth/register").send({
-      username: "rina",
-      email: "rina@example.com",
-      password: "password123",
-    });
+    const mine = await first.client.get("/api/auth/me");
+    const theirs = await second.client.get("/api/auth/me");
 
-    const mine = await first.get("/api/auth/me");
-    const theirs = await second.get("/api/auth/me");
     expect(mine.body.user.username).toBe("sam");
     expect(theirs.body.user.username).toBe("rina");
   });

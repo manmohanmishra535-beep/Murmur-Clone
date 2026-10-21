@@ -1,65 +1,49 @@
 "use strict";
 
-const jwt = require("jsonwebtoken");
-const { signToken, verifyToken, isCurrentToken, resolveSameSite } = require("../utils/token");
-const { createResetToken, hashResetToken } = require("../utils/resetToken");
+const User = require("../models/User");
+const {
+  sanitizeUsername,
+  usernameBase,
+  availableUsername,
+} = require("../services/userProvisioning");
 const { parseLimit, paginate, MAX_LIMIT } = require("../utils/pagination");
 const AppError = require("../utils/AppError");
 
-describe("token helpers", () => {
-  it("signs and verifies a payload in both directions", () => {
-    const token = signToken({ _id: "6720f1c2a9d4b3e1f0a1b2c3", tokenVersion: 3 });
-    const payload = verifyToken(token);
-
-    expect(payload.id).toBe("6720f1c2a9d4b3e1f0a1b2c3");
-    expect(payload.v).toBe(3);
-    expect(payload.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+describe("Clerk profile handles", () => {
+  it("folds any name into the handle rule", () => {
+    expect(sanitizeUsername("Priya Nair")).toBe("priya_nair");
+    expect(sanitizeUsername("priya.nair")).toBe("priya_nair");
+    expect(sanitizeUsername("  --Priya--  ")).toBe("priya");
+    expect(sanitizeUsername("a".repeat(30))).toHaveLength(15);
+    expect(sanitizeUsername("")).toBe("");
   });
 
-  it("treats a bare id as the first password generation", () => {
-    expect(verifyToken(signToken("6720f1c2a9d4b3e1f0a1b2c3")).v).toBe(0);
+  it("prefers the Clerk username, then the email, then the id", () => {
+    expect(usernameBase({ username: "priya.n", email: "x@y.com", sub: "user_1" })).toBe(
+      "priya_n"
+    );
+    expect(usernameBase({ username: "", email: "arjun@example.com", sub: "user_2" })).toBe(
+      "arjun"
+    );
+    expect(usernameBase({ username: "a", email: "a@b.co", sub: "user_abcdef" })).toBe(
+      "user_abcdef"
+    );
   });
 
-  it("retires a token when the account's generation moves on", () => {
-    const payload = verifyToken(signToken({ _id: "1", tokenVersion: 0 }));
+  it("adds a suffix when the handle is already taken", async () => {
+    await User.create({ username: "priya", email: "priya@example.com" });
 
-    expect(isCurrentToken(payload, { tokenVersion: 0 })).toBe(true);
-    expect(isCurrentToken(payload, { tokenVersion: 1 })).toBe(false);
-    // Tokens minted before versions existed have no "v" and count as 0.
-    expect(isCurrentToken({ id: "1" }, { tokenVersion: 0 })).toBe(true);
-    expect(isCurrentToken({ id: "1" }, { tokenVersion: 1 })).toBe(false);
+    expect(await availableUsername("priya")).toBe("priya2");
   });
 
-  it("rejects a token signed with another secret", () => {
-    const foreign = jwt.sign({ id: "1" }, "a-different-secret-that-is-long-enough");
+  it("keeps the suffix inside the fifteen character limit", async () => {
+    const base = "a".repeat(15);
+    await User.create({ username: base, email: "long@example.com" });
 
-    expect(() => verifyToken(foreign)).toThrow();
-  });
+    const available = await availableUsername(base);
 
-  it("uses SameSite=lax outside production", () => {
-    expect(resolveSameSite()).toBe("lax");
-  });
-});
-
-describe("reset token helpers", () => {
-  it("stores only a hash of the token that travels in the link", () => {
-    const { token, hash } = createResetToken();
-
-    expect(token).toMatch(/^[a-f0-9]{64}$/);
-    expect(hash).toBe(hashResetToken(token));
-    expect(hash).not.toBe(token);
-  });
-
-  it("never repeats a token", () => {
-    expect(createResetToken().token).not.toBe(createResetToken().token);
-  });
-
-  it("expires in half an hour", () => {
-    const { expiresAt } = createResetToken();
-    const minutes = (expiresAt.getTime() - Date.now()) / 60000;
-
-    expect(minutes).toBeGreaterThan(29);
-    expect(minutes).toBeLessThanOrEqual(30);
+    expect(available).toBe(`${"a".repeat(14)}2`);
+    expect(available.length).toBeLessThanOrEqual(15);
   });
 });
 

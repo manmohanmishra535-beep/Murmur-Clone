@@ -1,15 +1,21 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
+import { useAuth as useClerkAuth, useClerk } from "@clerk/nextjs";
 import { authService } from "@/services/authService";
-import { setUnauthorizedHandler } from "@/services/api";
+import { setTokenGetter, setUnauthorizedHandler } from "@/services/api";
 
 export const AuthContext = createContext(null);
 
 /**
- * status: "loading" while /auth/me is in flight, then "authenticated" | "guest".
- * The token itself is an httpOnly cookie, so it is never read by JavaScript.
+ * Clerk owns the session; this provider turns it into the app's profile.
+ *
+ * status: "loading" while Clerk loads or /auth/me is in flight, then
+ * "authenticated" | "guest". Every request carries the Clerk session token as
+ * a bearer header, so no cookie is read or written by the app.
  */
 export function AuthProvider({ children }) {
+  const { isLoaded, isSignedIn, getToken } = useClerkAuth();
+  const { signOut } = useClerk();
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState("loading");
   const router = useRouter();
@@ -19,10 +25,25 @@ export function AuthProvider({ children }) {
     setStatus("guest");
   }, []);
 
-  // One place decides what happens when a session dies mid-app.
+  // Axios asks Clerk for a fresh token on every call; the SDK refreshes an
+  // expiring session token itself. Declared before the hydration effect so it
+  // is registered by the time the first request leaves.
   useEffect(() => {
-    setUnauthorizedHandler(() => {
+    setTokenGetter(() => getToken());
+    return () => setTokenGetter(null);
+  }, [getToken]);
+
+  // One place decides what happens when the API rejects the session. Signing
+  // out of Clerk as well prevents a redirect loop when the token is valid for
+  // Clerk but not for this API (a misconfigured authorized party, say).
+  useEffect(() => {
+    setUnauthorizedHandler(async () => {
       clearSession();
+      try {
+        await signOut();
+      } catch {
+        // Already signed out, or offline: the redirect below still applies.
+      }
       const next =
         router.asPath && !["/login", "/register"].includes(router.pathname)
           ? `?next=${encodeURIComponent(router.asPath)}`
@@ -30,11 +51,19 @@ export function AuthProvider({ children }) {
       router.replace(`/login${next}`);
     });
     return () => setUnauthorizedHandler(null);
-  }, [clearSession, router]);
+  }, [clearSession, router, signOut]);
 
-  // Hydrate from the cookie on first paint.
+  // Hydrate the app profile whenever the Clerk session appears or changes.
   useEffect(() => {
+    if (!isLoaded) return undefined;
+
+    if (!isSignedIn) {
+      clearSession();
+      return undefined;
+    }
+
     let active = true;
+    setStatus("loading");
 
     authService
       .me()
@@ -52,29 +81,15 @@ export function AuthProvider({ children }) {
     return () => {
       active = false;
     };
-  }, []);
-
-  const login = useCallback(async (credentials) => {
-    const { user: current } = await authService.login(credentials);
-    setUser(current);
-    setStatus("authenticated");
-    return current;
-  }, []);
-
-  const register = useCallback(async (payload) => {
-    const { user: current } = await authService.register(payload);
-    setUser(current);
-    setStatus("authenticated");
-    return current;
-  }, []);
+  }, [isLoaded, isSignedIn, clearSession]);
 
   const logout = useCallback(async () => {
     try {
-      await authService.logout();
+      await signOut();
     } finally {
       clearSession();
     }
-  }, [clearSession]);
+  }, [signOut, clearSession]);
 
   /** Merge a server response into the cached user after a profile save. */
   const updateUser = useCallback((patch) => {
@@ -82,8 +97,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, status, login, register, logout, updateUser, refresh: authService.me }),
-    [user, status, login, register, logout, updateUser]
+    () => ({ user, status, logout, updateUser, refresh: authService.me }),
+    [user, status, logout, updateUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

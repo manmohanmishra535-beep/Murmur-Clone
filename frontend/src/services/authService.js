@@ -1,52 +1,12 @@
 import { api } from "./api";
 
 export const authService = {
-  async register({ username, email, password }) {
-    const { data } = await api.post(
-      "/auth/register",
-      { username, email, password },
-      { skipAuthRedirect: true }
-    );
-    return data;
-  },
-
-  async login({ email, password }) {
-    const { data } = await api.post(
-      "/auth/login",
-      { email, password },
-      { skipAuthRedirect: true }
-    );
-    return data;
-  },
-
-  async logout() {
-    await api.post("/auth/logout");
-  },
-
   /**
-   * Ask for a reset link. The API always answers 202 with the same message;
-   * outside production it also returns `resetUrl`, because no SMTP server is
-   * assumed to exist on a laptop.
+   * Hydrate the app profile behind the Clerk session. The first call after
+   * sign-up creates that profile, so this doubles as "make sure I exist".
+   * A 401 here means the API did not accept the session; AuthProvider decides
+   * what to do with it.
    */
-  async forgotPassword(email) {
-    const { data } = await api.post(
-      "/auth/forgot-password",
-      { email },
-      { skipAuthRedirect: true }
-    );
-    return data;
-  },
-
-  async resetPassword({ token, password }) {
-    const { data } = await api.post(
-      "/auth/reset-password",
-      { token, password },
-      { skipAuthRedirect: true }
-    );
-    return data;
-  },
-
-  /** hydrate on first load; a 401 here just means "no session". */
   async me() {
     const { data } = await api.get("/auth/me", { skipAuthRedirect: true });
     return data;
