@@ -1,0 +1,5 @@
+# Local secrets and build output never belong in a deployment upload.
+.env*
+.next
+.vercel
+node_modules
