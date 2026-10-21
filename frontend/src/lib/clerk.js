@@ -36,6 +36,11 @@ export function passwordHint({ minLength }) {
   return `At least ${minLength} characters.`;
 }
 
+/** True once the SDK has told us the instance's real rule. */
+export function hasPasswordPolicy(clerk) {
+  return Boolean(clerk?.__internal_environment?.userSettings?.passwordSettings);
+}
+
 export function validatePassword(value, { minLength, maxLength }) {
   const password = String(value || "");
   if (password.length < minLength) return `Use at least ${minLength} characters.`;

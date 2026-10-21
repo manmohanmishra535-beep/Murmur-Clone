@@ -1,5 +1,6 @@
 import {
   clerkErrorMessage,
+  hasPasswordPolicy,
   isIdentifierNotFound,
   passwordHint,
   passwordPolicy,
@@ -50,6 +51,11 @@ describe("password policy", () => {
 
   it("falls back before Clerk loads", () => {
     expect(passwordPolicy(null)).toEqual({ minLength: 8, maxLength: 72 });
+  });
+
+  it("knows when the real policy is available", () => {
+    expect(hasPasswordPolicy(clerkWith(15, 72))).toBe(true);
+    expect(hasPasswordPolicy(null)).toBe(false);
   });
 
   it("writes the hint from the policy", () => {

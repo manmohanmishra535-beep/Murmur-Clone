@@ -11,6 +11,7 @@ import Input from "@/components/Input";
 import { useAuth } from "@/hooks/useAuth";
 import {
   clerkErrorMessage,
+  hasPasswordPolicy,
   isIdentifierNotFound,
   passwordHint,
   passwordPolicy,
@@ -325,7 +326,7 @@ export default function LoginPage() {
               label="New password"
               type="password"
               autoComplete="new-password"
-              hint={passwordHint(policy)}
+              hint={hasPasswordPolicy(clerk) ? passwordHint(policy) : "Use a strong password."}
               value={values.newPassword}
               onChange={change}
               disabled={busy}

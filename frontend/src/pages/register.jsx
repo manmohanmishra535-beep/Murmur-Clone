@@ -9,7 +9,13 @@ import FormAlert from "@/components/FormAlert";
 import GoogleButton from "@/components/GoogleButton";
 import Input from "@/components/Input";
 import { useAuth } from "@/hooks/useAuth";
-import { clerkErrorMessage, passwordHint, passwordPolicy, validatePassword } from "@/lib/clerk";
+import {
+  clerkErrorMessage,
+  hasPasswordPolicy,
+  passwordHint,
+  passwordPolicy,
+  validatePassword,
+} from "@/lib/clerk";
 import { safeNextPath } from "@/lib/navigation";
 
 const EMPTY = { email: "", password: "", code: "" };
@@ -196,7 +202,7 @@ export default function RegisterPage() {
                 label="Password"
                 type="password"
                 autoComplete="new-password"
-                hint={passwordHint(policy)}
+                hint={hasPasswordPolicy(clerk) ? passwordHint(policy) : "Use a strong password."}
                 value={values.password}
                 onChange={change}
                 disabled={busy}
