@@ -2,31 +2,33 @@
 
 const { Server } = require("socket.io");
 const mongoose = require("mongoose");
+const { verifyToken } = require("@clerk/backend");
 const config = require("../config/env");
 const Conversation = require("../models/Conversation");
-const User = require("../models/User");
-const { verifyToken, isCurrentToken, COOKIE_NAME } = require("../utils/token");
 const { setIO, room, emitToUser } = require("./emitter");
+const { ensureUser } = require("../services/userProvisioning");
 const { createMessage } = require("../services/conversationService");
 
 /**
- * Socket.IO has no cookie-parser, so the handshake's Cookie header is read by
- * hand. It is the same httpOnly token the REST API uses, which is why a socket
- * needs no separate credential.
+ * Socket.IO has no Express middleware, so the Clerk session token travels in
+ * the connection's auth payload. It is the same token the REST client sends as
+ * a bearer header; a socket needs no separate credential.
  */
 function tokenFromHandshake(socket) {
-  const header = socket.handshake.headers.cookie || "";
-  for (const part of header.split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === COOKIE_NAME) return decodeURIComponent(rest.join("="));
-  }
-  return null;
+  const offered = socket.handshake.auth && socket.handshake.auth.token;
+  if (offered) return String(offered);
+
+  // A bearer header is accepted too, which makes the socket easy to probe from
+  // a terminal with the same token the API uses.
+  const header = socket.handshake.headers.authorization || "";
+  return header.startsWith("Bearer ") ? header.slice(7) : null;
 }
 
 /**
  * Runs on the same HTTP server as Express. A connection is accepted only when
- * the handshake carries a valid JWT cookie, and each socket joins a private
- * room named after its user id, so a push to one person is io.to(userId).
+ * the handshake carries a Clerk session token signed for this app, and each
+ * socket joins a private room named after its app user id, so a push to one
+ * person is io.to(userId).
  *
  * REST stays the one code path that writes data; the socket carries live pushes
  * and the one client-to-server write (message:send), which it hands to the same
@@ -38,22 +40,26 @@ function attach(server) {
   });
 
   io.use(async (socket, next) => {
-    if (!socket.handshake.headers.cookie) return next(new Error("UNAUTHENTICATED"));
+    const token = tokenFromHandshake(socket);
+    if (!token) return next(new Error("UNAUTHENTICATED"));
 
-    let payload;
+    let claims;
     try {
-      payload = verifyToken(tokenFromHandshake(socket));
+      claims = await verifyToken(token, {
+        secretKey: config.clerk.secretKey,
+        jwtKey: config.clerk.jwtKey,
+        authorizedParties: config.clerk.authorizedParties,
+      });
     } catch {
       return next(new Error("UNAUTHENTICATED"));
     }
 
-    // The handshake costs one extra read so a socket opened before a password
-    // reset dies with the REST session instead of outliving it.
+    if (!claims || !claims.sub) return next(new Error("UNAUTHENTICATED"));
+
     try {
-      const user = await User.findById(payload.id).select("tokenVersion");
-      if (!user || !isCurrentToken(payload, user)) {
-        return next(new Error("UNAUTHENTICATED"));
-      }
+      // Provisioning is idempotent; a socket opened before the first REST call
+      // still ends up attached to the right profile.
+      const user = await ensureUser({ userId: claims.sub, sessionClaims: claims });
       socket.data.userId = String(user._id);
       return next();
     } catch {

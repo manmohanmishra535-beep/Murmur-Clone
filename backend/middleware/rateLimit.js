@@ -22,7 +22,4 @@ const build = (options) =>
 /** 100 requests per 15 minutes per IP across the API. */
 const globalLimiter = build({ windowMs: 15 * 60 * 1000, limit: 100 });
 
-/** 10 per 15 minutes on login and register, to slow credential stuffing. */
-const authLimiter = build({ windowMs: 15 * 60 * 1000, limit: 10 });
-
-module.exports = { globalLimiter, authLimiter };
+module.exports = { globalLimiter };

@@ -3,10 +3,10 @@
 const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
-const cookieParser = require("cookie-parser");
 const mongoSanitize = require("express-mongo-sanitize");
 const morgan = require("morgan");
 const { randomUUID } = require("crypto");
+const { clerkMiddleware } = require("@clerk/express");
 
 const config = require("./config/env");
 const routes = require("./routes");
@@ -37,21 +37,32 @@ app.disable("x-powered-by");
 // 1. Security headers first, so even error responses carry them.
 app.use(helmet());
 
-// 2. One allowed origin, cookies on.
+// 2. One allowed origin. The browser sends a Clerk bearer token rather than a
+// cookie, so cross-site credentials are not part of the contract.
 app.use(
   cors({
     origin: config.clientUrl,
-    credentials: true,
   })
 );
 
 // 3. Small JSON bodies; posts with images go through multipart instead.
 app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: false, limit: "10kb" }));
-app.use(cookieParser());
 
 // 4. Strip $ and . operators so user input cannot reach a query object.
 app.use(mongoSanitize());
+
+// 5. Verify Clerk session tokens. With CLERK_JWT_KEY this is networkless;
+// without it the SDK fetches and caches the instance's JWKS. Requests without
+// a token are left anonymous, which is what the public read routes want.
+app.use(
+  clerkMiddleware({
+    secretKey: config.clerk.secretKey,
+    publishableKey: config.clerk.publishableKey,
+    jwtKey: config.clerk.jwtKey,
+    authorizedParties: config.clerk.authorizedParties,
+  })
+);
 
 if (!config.isTest) {
   // One line per request, prefixed with the id the response carried, so the
@@ -66,7 +77,7 @@ if (!config.isTest) {
   );
 }
 
-// 5. Global rate limit for /api, with a stricter one on auth inside the router.
+// 6. Global rate limit for /api.
 app.use("/api", globalLimiter, routes);
 
 app.use(notFound);

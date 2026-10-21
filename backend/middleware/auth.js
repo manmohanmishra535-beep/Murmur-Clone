@@ -1,49 +1,34 @@
 "use strict";
 
-const { verifyToken, isCurrentToken, COOKIE_NAME } = require("../utils/token");
-const User = require("../models/User");
+const { getAuth } = require("@clerk/express");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
+const { ensureUser } = require("../services/userProvisioning");
 
 /**
- * Reads the httpOnly token cookie, verifies it and attaches req.user.
- * Any failure is a 401 with the same shape so the client can treat them alike.
+ * Clerk's middleware verified the bearer token (or the __session cookie) and
+ * left the result on the request. This turns a Clerk user id into the app's
+ * profile, creating the profile on first use.
  */
 const requireAuth = asyncHandler(async (req, _res, next) => {
-  const token = req.cookies ? req.cookies[COOKIE_NAME] : null;
-  if (!token) throw AppError.unauthenticated();
+  const auth = getAuth(req);
+  if (!auth.userId) throw AppError.unauthenticated("Sign in to continue.");
 
-  let payload;
-  try {
-    payload = verifyToken(token);
-  } catch {
-    throw AppError.unauthenticated("Your session expired. Log in again.");
-  }
-
-  const user = await User.findById(payload.id);
-  if (!user) throw AppError.unauthenticated("Your session expired. Log in again.");
-  // A password reset bumps the account's generation, which retires every
-  // cookie handed out before it.
-  if (!isCurrentToken(payload, user)) {
-    throw AppError.unauthenticated("Your password changed. Log in again.");
-  }
-
-  req.user = user;
+  req.auth = auth;
+  req.user = await ensureUser(auth);
   next();
 });
 
-/** Populate req.user when a cookie is present, but let anonymous traffic through. */
+/** Populate req.user when a token is present, but let anonymous traffic through. */
 const optionalAuth = asyncHandler(async (req, _res, next) => {
-  const token = req.cookies ? req.cookies[COOKIE_NAME] : null;
-  if (!token) return next();
+  const auth = getAuth(req);
+  if (!auth.userId) return next();
 
   try {
-    const payload = verifyToken(token);
-    const user = await User.findById(payload.id);
-    // Same generation check as requireAuth, but a stale cookie simply means
-    // "treat this request as anonymous" rather than a 401.
-    req.user = user && isCurrentToken(payload, user) ? user : undefined;
+    req.auth = auth;
+    req.user = await ensureUser(auth);
   } catch {
+    // A public read must not fail because a profile could not be provisioned.
     req.user = undefined;
   }
   return next();
