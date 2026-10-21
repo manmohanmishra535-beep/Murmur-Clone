@@ -2,17 +2,17 @@ import { useEffect, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useClerk } from "@clerk/nextjs";
+import { useAuth as useClerkAuth, useClerk } from "@clerk/nextjs";
 import AuthLayout from "@/components/AuthLayout";
 import Button from "@/components/Button";
 import FormAlert from "@/components/FormAlert";
 import GoogleButton from "@/components/GoogleButton";
 import Input from "@/components/Input";
-import { useAuth } from "@/hooks/useAuth";
 import {
   clerkErrorMessage,
   hasPasswordPolicy,
   isIdentifierNotFound,
+  isSessionExists,
   passwordHint,
   passwordPolicy,
   validatePassword,
@@ -29,7 +29,7 @@ const EMPTY = { email: "", password: "", code: "", newPassword: "" };
 export default function LoginPage() {
   const router = useRouter();
   const clerk = useClerk();
-  const { status } = useAuth();
+  const { isSignedIn } = useClerkAuth();
   const nextPath = safeNextPath(router.query.next);
 
   // Same policy the register page shows; a reset writes a new password.
@@ -42,10 +42,12 @@ export default function LoginPage() {
   const [notFound, setNotFound] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Already signed in? Go where you were headed.
+  // Clerk, not the API profile, decides whether this page is reachable: a
+  // signed-in browser must never see the sign-in form, even while /auth/me is
+  // still in flight or the API is cold-starting.
   useEffect(() => {
-    if (status === "authenticated") router.replace(nextPath);
-  }, [status, router, nextPath]);
+    if (isSignedIn) router.replace(nextPath);
+  }, [isSignedIn, router, nextPath]);
 
   function change(event) {
     const { name, value } = event.target;
@@ -73,6 +75,7 @@ export default function LoginPage() {
   async function handleSignIn(event) {
     event.preventDefault();
     clearFeedback();
+    if (isSignedIn) return router.replace(nextPath);
     if (!values.email.trim()) return setError("Enter your email address.");
     if (!values.password) return setError("Enter your password.");
 
@@ -93,6 +96,9 @@ export default function LoginPage() {
       }
       return setError("This account needs another verification step. Try again in a private window.");
     } catch (err) {
+      // A session can appear between render and submit (another tab, or a slow
+      // Clerk load). Follow it rather than reporting it as a form error.
+      if (isSessionExists(err)) return router.replace(nextPath);
       setNotFound(isIdentifierNotFound(err));
       setError(clerkErrorMessage(err, "That email and password did not work."));
     } finally {
@@ -103,6 +109,7 @@ export default function LoginPage() {
   async function requestReset(event) {
     event.preventDefault();
     clearFeedback();
+    if (isSignedIn) return router.replace(nextPath);
     if (!values.email.trim()) return setError("Enter your email address first.");
 
     setBusy(true);
@@ -126,6 +133,7 @@ export default function LoginPage() {
   async function completeReset(event) {
     event.preventDefault();
     clearFeedback();
+    if (isSignedIn) return router.replace(nextPath);
     if (!values.code.trim()) return setError("Enter the code from the email.");
     const passwordMessage = validatePassword(values.newPassword, policy);
     if (passwordMessage) return setError(passwordMessage);
@@ -151,6 +159,7 @@ export default function LoginPage() {
 
   async function handleGoogle() {
     clearFeedback();
+    if (isSignedIn) return router.replace(nextPath);
     setBusy(true);
     try {
       const signIn = clerk.client?.signIn;
@@ -166,6 +175,7 @@ export default function LoginPage() {
         redirectUrlComplete: nextPath,
       });
     } catch (err) {
+      if (isSessionExists(err)) return router.replace(nextPath);
       setError(clerkErrorMessage(err, "Google sign-in is unavailable right now."));
       setBusy(false);
     }

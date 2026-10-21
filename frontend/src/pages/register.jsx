@@ -2,16 +2,16 @@ import { useEffect, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useClerk } from "@clerk/nextjs";
+import { useAuth as useClerkAuth, useClerk } from "@clerk/nextjs";
 import AuthLayout from "@/components/AuthLayout";
 import Button from "@/components/Button";
 import FormAlert from "@/components/FormAlert";
 import GoogleButton from "@/components/GoogleButton";
 import Input from "@/components/Input";
-import { useAuth } from "@/hooks/useAuth";
 import {
   clerkErrorMessage,
   hasPasswordPolicy,
+  isSessionExists,
   passwordHint,
   passwordPolicy,
   validatePassword,
@@ -28,7 +28,7 @@ const EMPTY = { email: "", password: "", code: "" };
 export default function RegisterPage() {
   const router = useRouter();
   const clerk = useClerk();
-  const { status } = useAuth();
+  const { isSignedIn } = useClerkAuth();
   const nextPath = safeNextPath(router.query.next);
 
   // Clerk knows the instance's password policy; AuthProvider re-renders this
@@ -41,9 +41,12 @@ export default function RegisterPage() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Clerk, not the API profile, decides whether this page is reachable: a
+  // signed-in browser must never see the sign-up form, even while /auth/me is
+  // still in flight or the API is cold-starting.
   useEffect(() => {
-    if (status === "authenticated") router.replace(nextPath);
-  }, [status, router, nextPath]);
+    if (isSignedIn) router.replace(nextPath);
+  }, [isSignedIn, router, nextPath]);
 
   // /login links here with ?email= when that address has no account.
   useEffect(() => {
@@ -69,6 +72,7 @@ export default function RegisterPage() {
   async function handleCreate(event) {
     event.preventDefault();
     clearFeedback();
+    if (isSignedIn) return router.replace(nextPath);
     if (!values.email.trim()) return setError("Enter your email address.");
     const passwordMessage = validatePassword(values.password, policy);
     if (passwordMessage) return setError(passwordMessage);
@@ -88,6 +92,9 @@ export default function RegisterPage() {
       setStep("verify");
       setNotice(`We sent a six-digit code to ${values.email.trim()}.`);
     } catch (err) {
+      // A session can appear between render and submit (another tab, or a slow
+      // Clerk load). Follow it rather than reporting it as a form error.
+      if (isSessionExists(err)) return router.replace(nextPath);
       setError(clerkErrorMessage(err, "That account could not be created."));
     } finally {
       setBusy(false);
@@ -131,6 +138,7 @@ export default function RegisterPage() {
 
   async function handleGoogle() {
     clearFeedback();
+    if (isSignedIn) return router.replace(nextPath);
     setBusy(true);
     try {
       const signUp = clerk.client?.signUp;
@@ -144,6 +152,7 @@ export default function RegisterPage() {
         redirectUrlComplete: nextPath,
       });
     } catch (err) {
+      if (isSessionExists(err)) return router.replace(nextPath);
       setError(clerkErrorMessage(err, "Google sign-up is unavailable right now."));
       setBusy(false);
     }

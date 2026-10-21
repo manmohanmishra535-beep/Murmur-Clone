@@ -2,6 +2,7 @@ import {
   clerkErrorMessage,
   hasPasswordPolicy,
   isIdentifierNotFound,
+  isSessionExists,
   passwordHint,
   passwordPolicy,
   validatePassword,
@@ -35,6 +36,14 @@ describe("isIdentifierNotFound", () => {
       false
     );
     expect(isIdentifierNotFound(undefined)).toBe(false);
+  });
+});
+
+describe("isSessionExists", () => {
+  it("is true only for session_exists", () => {
+    expect(isSessionExists({ errors: [{ code: "session_exists" }] })).toBe(true);
+    expect(isSessionExists({ errors: [{ code: "form_password_incorrect" }] })).toBe(false);
+    expect(isSessionExists(undefined)).toBe(false);
   });
 });
 

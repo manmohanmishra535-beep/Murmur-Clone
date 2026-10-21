@@ -18,6 +18,16 @@ export function isIdentifierNotFound(error) {
 }
 
 /**
+ * True when Clerk refused to start a new sign-in/sign-up because the browser
+ * already holds a session. The page should follow that session instead of
+ * showing "you're already signed in" as a form error.
+ */
+export function isSessionExists(error) {
+  const first = error && Array.isArray(error.errors) ? error.errors[0] : null;
+  return Boolean(first && first.code === "session_exists");
+}
+
+/**
  * The instance's password policy, so the hint matches what Clerk will enforce.
  * `__internal_environment` is the only client-side handle on user settings; the
  * fallbacks are Clerk's own defaults and only apply before the SDK loads.
