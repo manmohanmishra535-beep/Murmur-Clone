@@ -178,6 +178,13 @@ JWKS. If you want people to choose their `@handle` at sign-up, enable **Username
 Clerk dashboard's sign-up options — otherwise the API derives one from the email's local
 part (see `backend/services/userProvisioning.js`).
 
+No Clerk account yet? From `frontend/`, `npx clerk init` provisions a temporary
+"accountless" development instance and writes the keys to `frontend/.env.local`; copy the same
+secret and publishable key into `backend/.env`. On a Pages Router it also scaffolds
+`/sign-in` and `/sign-up` pages and their route variables, which this app does not use — delete
+those pages and the four `NEXT_PUBLIC_CLERK_SIGN_*` lines. Claim the instance later with
+`npx clerk auth login`, or replace the keys with a real application's.
+
 Fill in `MONGO_URI` as well. `CLOUDINARY_*` can stay empty; the API starts and logs that
 uploads are disabled.
 
