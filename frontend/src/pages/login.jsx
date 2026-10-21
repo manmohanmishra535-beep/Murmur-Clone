@@ -9,7 +9,13 @@ import FormAlert from "@/components/FormAlert";
 import GoogleButton from "@/components/GoogleButton";
 import Input from "@/components/Input";
 import { useAuth } from "@/hooks/useAuth";
-import { clerkErrorMessage, isIdentifierNotFound } from "@/lib/clerk";
+import {
+  clerkErrorMessage,
+  isIdentifierNotFound,
+  passwordHint,
+  passwordPolicy,
+  validatePassword,
+} from "@/lib/clerk";
 import { safeNextPath } from "@/lib/navigation";
 
 const EMPTY = { email: "", password: "", code: "", newPassword: "" };
@@ -24,6 +30,9 @@ export default function LoginPage() {
   const clerk = useClerk();
   const { status } = useAuth();
   const nextPath = safeNextPath(router.query.next);
+
+  // Same policy the register page shows; a reset writes a new password.
+  const policy = passwordPolicy(clerk);
 
   const [mode, setMode] = useState("signIn");
   const [values, setValues] = useState(EMPTY);
@@ -117,7 +126,8 @@ export default function LoginPage() {
     event.preventDefault();
     clearFeedback();
     if (!values.code.trim()) return setError("Enter the code from the email.");
-    if (values.newPassword.length < 8) return setError("Use at least 8 characters for the new password.");
+    const passwordMessage = validatePassword(values.newPassword, policy);
+    if (passwordMessage) return setError(passwordMessage);
 
     setBusy(true);
     try {
@@ -315,7 +325,7 @@ export default function LoginPage() {
               label="New password"
               type="password"
               autoComplete="new-password"
-              hint="At least 8 characters."
+              hint={passwordHint(policy)}
               value={values.newPassword}
               onChange={change}
               disabled={busy}

@@ -1,4 +1,10 @@
-import { clerkErrorMessage, isIdentifierNotFound } from "../clerk";
+import {
+  clerkErrorMessage,
+  isIdentifierNotFound,
+  passwordHint,
+  passwordPolicy,
+  validatePassword,
+} from "../clerk";
 
 describe("clerkErrorMessage", () => {
   it("prefers Clerk's long message", () => {
@@ -28,5 +34,38 @@ describe("isIdentifierNotFound", () => {
       false
     );
     expect(isIdentifierNotFound(undefined)).toBe(false);
+  });
+});
+
+describe("password policy", () => {
+  const clerkWith = (min_length, max_length) => ({
+    __internal_environment: {
+      userSettings: { passwordSettings: { min_length, max_length } },
+    },
+  });
+
+  it("reads the instance's limits", () => {
+    expect(passwordPolicy(clerkWith(15, 72))).toEqual({ minLength: 15, maxLength: 72 });
+  });
+
+  it("falls back before Clerk loads", () => {
+    expect(passwordPolicy(null)).toEqual({ minLength: 8, maxLength: 72 });
+  });
+
+  it("writes the hint from the policy", () => {
+    expect(passwordHint({ minLength: 15 })).toBe("At least 15 characters.");
+  });
+
+  it("rejects a password under the minimum", () => {
+    expect(validatePassword("short", { minLength: 15, maxLength: 72 })).toBe(
+      "Use at least 15 characters."
+    );
+    expect(validatePassword("123456789012345", { minLength: 15, maxLength: 72 })).toBe("");
+  });
+
+  it("rejects a password over the maximum", () => {
+    expect(validatePassword("x".repeat(73), { minLength: 8, maxLength: 72 })).toBe(
+      "Keep your password to 72 characters or fewer."
+    );
   });
 });

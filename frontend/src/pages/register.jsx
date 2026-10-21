@@ -9,7 +9,7 @@ import FormAlert from "@/components/FormAlert";
 import GoogleButton from "@/components/GoogleButton";
 import Input from "@/components/Input";
 import { useAuth } from "@/hooks/useAuth";
-import { clerkErrorMessage } from "@/lib/clerk";
+import { clerkErrorMessage, passwordHint, passwordPolicy, validatePassword } from "@/lib/clerk";
 import { safeNextPath } from "@/lib/navigation";
 
 const EMPTY = { email: "", password: "", code: "" };
@@ -24,6 +24,10 @@ export default function RegisterPage() {
   const clerk = useClerk();
   const { status } = useAuth();
   const nextPath = safeNextPath(router.query.next);
+
+  // Clerk knows the instance's password policy; AuthProvider re-renders this
+  // page when the SDK finishes loading, so the hint picks up the real rule.
+  const policy = passwordPolicy(clerk);
 
   const [step, setStep] = useState("form");
   const [values, setValues] = useState(EMPTY);
@@ -60,7 +64,8 @@ export default function RegisterPage() {
     event.preventDefault();
     clearFeedback();
     if (!values.email.trim()) return setError("Enter your email address.");
-    if (values.password.length < 8) return setError("Use at least 8 characters for your password.");
+    const passwordMessage = validatePassword(values.password, policy);
+    if (passwordMessage) return setError(passwordMessage);
 
     setBusy(true);
     try {
@@ -191,7 +196,7 @@ export default function RegisterPage() {
                 label="Password"
                 type="password"
                 autoComplete="new-password"
-                hint="At least 8 characters."
+                hint={passwordHint(policy)}
                 value={values.password}
                 onChange={change}
                 disabled={busy}

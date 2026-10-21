@@ -654,9 +654,9 @@ the author's socket, along with `notification:remove`, `post:counts`, a socket-s
 stored for both participants, a failed send returning an ack instead of throwing, and typing
 reaching the peer only.
 
-Frontend: 109 tests over the pure modules — `compactNumber`, `relativeTime`,
-`joinedDate`, the profile validators (display name and bio), the Clerk error-message helper,
-the composer counter maths and
+Frontend: 114 tests over the pure modules — `compactNumber`, `relativeTime`,
+`joinedDate`, the profile validators (display name and bio), the Clerk error-message and
+password-policy helpers, the composer counter maths and
 `isPostable` with images, the image type/size/batch rules, the Cloudinary transform helper,
 the post list helpers (`flattenPages`, `isOwnPost`, `withoutPost`, `withLike`,
 `withCommentCount`, `withoutComment`, `withFollow`, `canFollow`, `displayedPost`,
@@ -685,7 +685,9 @@ production frontend build, covering the whole Phase 4 surface including live del
   its own branding (removing it is a paid-plan feature), so `login.jsx` and `register.jsx`
   drive Clerk's sign-in and sign-up resources directly: same sessions, same OAuth handshake,
   same password handling, but Murmur's markup and no vendor badge. `/sso-callback` finishes
-  Google's redirect, and the API never sees a password.
+  Google's redirect, and the API never sees a password. The password hint and client-side
+  check read the instance's `min_length` (15 on the accountless instance), so the form and
+  Clerk's own error cannot disagree.
 - **The app profile is created lazily.** `GET /api/auth/me` provisions the row on the first
   verified request: the handle comes from the Clerk username when it fits the app's rule,
   otherwise from the email's local part, and is de-duplicated. This means no webhook is

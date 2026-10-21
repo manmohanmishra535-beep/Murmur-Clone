@@ -16,3 +16,31 @@ export function isIdentifierNotFound(error) {
   const first = error && Array.isArray(error.errors) ? error.errors[0] : null;
   return Boolean(first && first.code === "form_identifier_not_found");
 }
+
+/**
+ * The instance's password policy, so the hint matches what Clerk will enforce.
+ * `__internal_environment` is the only client-side handle on user settings; the
+ * fallbacks are Clerk's own defaults and only apply before the SDK loads.
+ */
+export function passwordPolicy(clerk) {
+  const settings = clerk?.__internal_environment?.userSettings?.passwordSettings;
+  const min = Number(settings?.min_length);
+  const max = Number(settings?.max_length);
+  return {
+    minLength: Number.isInteger(min) && min > 0 ? min : 8,
+    maxLength: Number.isInteger(max) && max > 0 ? max : 72,
+  };
+}
+
+export function passwordHint({ minLength }) {
+  return `At least ${minLength} characters.`;
+}
+
+export function validatePassword(value, { minLength, maxLength }) {
+  const password = String(value || "");
+  if (password.length < minLength) return `Use at least ${minLength} characters.`;
+  if (password.length > maxLength) {
+    return `Keep your password to ${maxLength} characters or fewer.`;
+  }
+  return "";
+}
