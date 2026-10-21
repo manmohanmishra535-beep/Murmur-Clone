@@ -8,6 +8,7 @@ import {
   withCommentCount,
   withCounts,
   withFollow,
+  withFollowInList,
   withLike,
   withRepost,
   withoutComment,
@@ -153,6 +154,34 @@ describe("withFollow", () => {
 
   it("never counts below zero", () => {
     expect(withFollow({ _id: "u1", isFollowing: true }, false).followerCount).toBe(0);
+  });
+});
+
+describe("withFollowInList", () => {
+  it("flips the matching row in a plain array", () => {
+    const data = [
+      { _id: "u1", isFollowing: false, followerCount: 0 },
+      { _id: "u2", isFollowing: false, followerCount: 5 },
+    ];
+
+    const next = withFollowInList(data, "u2", true);
+
+    expect(next[0]).toBe(data[0]);
+    expect(next[1]).toEqual({ _id: "u2", isFollowing: true, followerCount: 6 });
+  });
+
+  it("flips the matching row inside infinite pages", () => {
+    const data = { pages: [{ items: [{ _id: "u1", isFollowing: false, followerCount: 1 }] }] };
+
+    expect(withFollowInList(data, "u1", true).pages[0].items[0]).toEqual({
+      _id: "u1",
+      isFollowing: true,
+      followerCount: 2,
+    });
+  });
+
+  it("passes null through", () => {
+    expect(withFollowInList(null, "u1", true)).toBeNull();
   });
 });
 

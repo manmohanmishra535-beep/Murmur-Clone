@@ -2,12 +2,12 @@ import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { userService } from "@/services/userService";
 import { errorMessage } from "@/services/api";
-import { withFollow } from "@/lib/posts";
+import { withFollow, withFollowInList } from "@/lib/posts";
 import { useAuth } from "./useAuth";
 import { useToast } from "./useToast";
 
 const isProfile = (query) => query.queryKey[0] === "profile";
-/** Every cached roster of user rows: each account's followers and following. */
+/** Every cached roster of user rows: suggestions, search, followers, following. */
 const isUserList = (query) => query.queryKey[0] === "users";
 
 /**
@@ -45,18 +45,9 @@ export function useFollow() {
         profile && String(profile._id) === id ? withFollow(profile, next) : profile
       );
 
-      queryClient.setQueriesData({ predicate: isUserList }, (data) => {
-        if (!data || !Array.isArray(data.pages)) return data;
-        return {
-          ...data,
-          pages: data.pages.map((page) => ({
-            ...page,
-            items: (page.items || []).map((row) =>
-              String(row._id) === id ? withFollow(row, next) : row
-            ),
-          })),
-        };
-      });
+      queryClient.setQueriesData({ predicate: isUserList }, (data) =>
+        withFollowInList(data, id, next)
+      );
 
       // The viewer's own header counts the accounts they follow.
       const ownKey = viewer ? ["profile", viewer.username] : null;

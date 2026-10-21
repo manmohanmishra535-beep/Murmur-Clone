@@ -129,6 +129,26 @@ export function withFollow(user, following) {
   };
 }
 
+/**
+ * Applies a follow change to a cached roster. Rosters come in two shapes: a
+ * plain array (suggestions, search) and an infinite query ({ pages: [{ items }] }).
+ */
+export function withFollowInList(data, id, following) {
+  if (!data) return data;
+  const mark = (row) =>
+    String(row._id) === String(id) ? withFollow(row, following) : row;
+
+  if (Array.isArray(data)) return data.map(mark);
+  if (!Array.isArray(data.pages)) return data;
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      items: (page.items || []).map(mark),
+    })),
+  };
+}
+
 /** True when the viewer may follow this account (never yourself, never signed out). */
 export function canFollow(user, viewerId) {
   if (!user || !viewerId) return false;
