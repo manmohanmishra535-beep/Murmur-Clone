@@ -54,6 +54,13 @@ export function AuthProvider({ children }) {
   }, [clearSession, router, signOut]);
 
   // Hydrate the app profile whenever the Clerk session appears or changes.
+  //
+  // A failed request is not proof that the session ended. Render's free
+  // instance sleeps after 15 minutes, so the first call of the day can time out
+  // or return a 502 while the container boots. Treating that as "guest" used to
+  // bounce the signed-in user to /login, which sent them straight back here:
+  // an endless redirect loop. Only a 401 means the token was refused; anything
+  // else keeps the session and retries until the API answers.
   useEffect(() => {
     if (!isLoaded) return undefined;
 
@@ -63,25 +70,48 @@ export function AuthProvider({ children }) {
     }
 
     let active = true;
+    let attempt = 0;
+    let timer;
+
     setStatus("loading");
 
-    authService
-      .me()
-      .then(({ user: current }) => {
-        if (!active) return;
-        setUser(current);
-        setStatus("authenticated");
-      })
-      .catch(() => {
-        if (!active) return;
-        setUser(null);
-        setStatus("guest");
-      });
+    const load = () => {
+      authService
+        .me()
+        .then(({ user: current }) => {
+          if (!active) return;
+          setUser(current);
+          setStatus("authenticated");
+        })
+        .catch(async (error) => {
+          if (!active) return;
+
+          if (error.response && error.response.status === 401) {
+            // Clerk still holds a session but the API refused its token (keys
+            // or authorized parties are wrong). Drop the session so /login
+            // does not bounce the user back into this loop.
+            clearSession();
+            try {
+              await signOut();
+            } catch {
+              // Already gone; the redirect below still applies.
+            }
+            return;
+          }
+
+          attempt += 1;
+          const delay = Math.min(2000 * 2 ** (attempt - 1), 20000);
+          timer = setTimeout(load, delay);
+        });
+    };
+
+    load();
 
     return () => {
       active = false;
+      clearTimeout(timer);
     };
-  }, [isLoaded, isSignedIn, clearSession]);
+  }, [isLoaded, isSignedIn, clearSession, signOut]);
 
   const logout = useCallback(async () => {
     try {
