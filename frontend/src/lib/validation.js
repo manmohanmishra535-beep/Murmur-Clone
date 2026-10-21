@@ -76,3 +76,19 @@ export function validateProfile(values) {
     bio: validateBio(values.bio),
   });
 }
+
+export function validateForgotPassword(values) {
+  return prune({ email: validateEmail(values.email) });
+}
+
+export function validateResetPassword(values) {
+  const password = String(values.password || "");
+  const confirm = String(values.confirm || "");
+
+  return prune({
+    password: validatePassword(password),
+    // Only compare once something has been typed, so an empty form does not
+    // show two errors for the same empty field.
+    confirm: confirm && confirm !== password ? "The two passwords do not match." : "",
+  });
+}

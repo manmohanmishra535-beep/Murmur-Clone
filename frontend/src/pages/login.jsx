@@ -105,6 +105,14 @@ export default function LoginPage() {
             name="password"
             type="password"
             label="Password"
+            labelAction={
+              <Link
+                href="/forgot-password"
+                className="text-xs font-medium text-accent hover:underline"
+              >
+                Forgot password?
+              </Link>
+            }
             placeholder="Your password"
             autoComplete="current-password"
             value={values.password}

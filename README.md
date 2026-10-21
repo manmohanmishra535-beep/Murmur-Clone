@@ -25,12 +25,14 @@ twitter-clone/
 | Deliverable | Where |
 | --- | --- |
 | Register, login, logout, current user | `backend/routes/auth.js`, `backend/controllers/authController.js` |
+| Forgot and reset password: one-use, 30-minute hashed token; a reset retires every older session | `controllers/authController.js`, `utils/resetToken.js`, `utils/mailer.js` |
 | bcrypt hashing at cost 12, `password` has `select: false` | `backend/models/User.js` |
-| HS256 JWT in an httpOnly cookie named `token` | `backend/utils/token.js` |
+| HS256 JWT in an httpOnly cookie named `token`, carrying a password generation | `backend/utils/token.js` |
 | Protected routes and ownership helper | `backend/middleware/auth.js` |
 | Profile read (`GET /api/users/:username`) and profile edit (`PATCH /api/users/me`, avatar upload) | `backend/controllers/userController.js` |
 | Validation, error shape, rate limits, helmet, CORS, sanitising | `backend/middleware/*`, `backend/validators/*` |
 | Login, register, profile, settings screens with inline validation | `frontend/src/pages/login.jsx`, `register.jsx`, `[username].jsx`, `settings.jsx` |
+| Forgot-password and reset-password screens, linked from the login form | `frontend/src/pages/forgot-password.jsx`, `reset-password.jsx` |
 | Route protection in middleware plus a client-side session guard | `frontend/src/middleware.js`, `frontend/src/hooks/useRequireAuth.js` |
 | Design tokens and the core component set | `frontend/src/styles/tokens.css`, `frontend/tailwind.config.js`, `frontend/src/components/*` |
 
@@ -186,6 +188,7 @@ Open <http://localhost:3000>, register a user, and the profile page loads.
 | `COOKIE_SAMESITE` | Optional override: `lax`, `none` or `strict` |
 | `PORT` | API port, default 5000 |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Image uploads |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Password reset emails. Optional: without a host the API logs each link instead, and outside production also returns it to the page. Port 465 uses implicit TLS, anything else STARTTLS. |
 
 **frontend/.env.local**
 
@@ -398,6 +401,8 @@ All routes are under `/api` and speak JSON. Errors always use
 | GET | `/api/health` | no | `{ status: "ok", db: "connected" }` |
 | POST | `/api/auth/register` | no | username, email, password → `201 { user }` and a cookie |
 | POST | `/api/auth/login` | no | email, password → `200 { user }` and a cookie |
+| POST | `/api/auth/forgot-password` | no | email → `202 { message }`, identical for a known and an unknown address |
+| POST | `/api/auth/reset-password` | no | token, password → `200`; `400 INVALID_RESET_TOKEN` once spent or after 30 minutes |
 | POST | `/api/auth/logout` | yes | `204`, clears the cookie |
 | GET | `/api/auth/me` | yes | `200 { user }` |
 | GET | `/api/users/:username` | optional | Public profile with counts and `isFollowing` |
@@ -432,6 +437,14 @@ All routes are under `/api` and speak JSON. Errors always use
 | POST | `/api/conversations/:id/messages` | yes, participant | JSON `text` → `201` and a bare message |
 | GET | `/api/users/search?q=` | yes | Up to 10 accounts matching a username prefix or display name |
 | GET | `/api/users/suggested` | yes | Up to 10 accounts the viewer does not follow, most followed first |
+
+**Password reset.** The emailed token is 32 random bytes and only its SHA-256 hash is stored,
+so a copy of the database cannot be replayed as working links. A link expires after 30 minutes
+and works once. A successful reset bumps the account's `tokenVersion`, and every JWT carries
+the generation it was signed with, so REST calls and socket handshakes from sessions opened
+before the change are rejected — a stolen cookie dies with the old password. With no SMTP
+server configured the API prints the link to its log and, outside production, also returns it
+as `resetUrl` so the flow works on a laptop.
 
 **Response shapes.** Post lists, comment lists, user lists, notification lists, the inbox and
 message threads are all `{ items, nextCursor }`, where `nextCursor` is the last `_id` or
@@ -555,11 +568,16 @@ npm --prefix backend test      # Jest + Supertest + mongodb-memory-server
 npm --prefix frontend test     # Jest on the pure lib modules
 ```
 
-Backend: 172 tests. Authentication and profiles (36): register (success, 422 field errors, 409
+Backend: 188 tests. Authentication and profiles (52): register (success, 422 field errors, 409
 for username and email, lowercase normalisation, hashing), login (success, 401 twice, 422),
 `/auth/me` (401 without a cookie, 401 for a tampered token, 200 with one), logout, the
 health check and its request id (generated, kept when the caller supplies a sane one,
-replaced when it does not), profile read (public, owner-only email, 404), profile edit (success, 422 for
+replaced when it does not), forgot-password (the same 202 for a known and an unknown address,
+only a hash stored, a 422 for a malformed email, the old password still working, and a new
+link replacing the old one),
+reset-password (the password swapped, the old one refused, the link spent, sessions opened
+before the reset rejected, an expired and an unknown token both a 400, and 422s),
+profile read (public, owner-only email, 404), profile edit (success, 422 for
 bio and display name, rejected non-image upload), plus unit tests for token helpers, the
 pagination cursor and `AppError`. Posts (30): create with text, with images, image-only,
 422 for empty and over-length content, an unsupported type and an oversized file, orphan
@@ -598,9 +616,10 @@ real HTTP server and connects a real `socket.io-client` — rejecting a missing 
 cookie, accepting the REST cookie, and then proving the Phase 4 done-when by liking over REST
 and receiving `notification:new` on the author's socket, along with `notification:remove`,
 `post:counts`, a socket-sent message stored for both participants, a failed send returning an
-ack instead of throwing, and typing reaching the peer only.
+ack instead of throwing, typing reaching the peer only, and a cookie from before a password
+reset refused at the handshake.
 
-Frontend: 110 tests over the pure modules — `compactNumber`, `relativeTime`,
+Frontend: 112 tests over the pure modules — `compactNumber`, `relativeTime`,
 `joinedDate`, the client-side validators, the composer counter maths and `isPostable` with
 images, the image type/size/batch rules, the Cloudinary transform helper, the post list
 helpers (`flattenPages`, `isOwnPost`, `withoutPost`, `withLike`, `withCommentCount`,

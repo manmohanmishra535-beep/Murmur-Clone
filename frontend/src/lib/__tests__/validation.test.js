@@ -2,10 +2,12 @@ import {
   validateBio,
   validateDisplayName,
   validateEmail,
+  validateForgotPassword,
   validateLogin,
   validatePassword,
   validateProfile,
   validateRegister,
+  validateResetPassword,
   validateUsername,
 } from "../validation";
 
@@ -68,5 +70,22 @@ describe("form payloads", () => {
   it("validates a profile edit", () => {
     expect(validateProfile({ displayName: "Priya Nair", bio: "Chai." })).toEqual({});
     expect(validateProfile({ displayName: "", bio: "x".repeat(161) })).toHaveProperty("bio");
+  });
+
+  it("asks only for an email when resetting", () => {
+    expect(validateForgotPassword({ email: "priya@example.com" })).toEqual({});
+    expect(validateForgotPassword({ email: "nope" })).toHaveProperty("email");
+  });
+
+  it("requires two matching passwords when choosing a new one", () => {
+    expect(validateResetPassword({ password: "password123", confirm: "password123" })).toEqual({});
+
+    expect(validateResetPassword({ password: "password123", confirm: "password124" })).toEqual({
+      confirm: "The two passwords do not match.",
+    });
+
+    // An empty form complains once, not twice.
+    expect(Object.keys(validateResetPassword({ password: "", confirm: "" }))).toEqual(["password"]);
+    expect(validateResetPassword({ password: "short", confirm: "short" })).toHaveProperty("password");
   });
 });

@@ -8,6 +8,7 @@ import clsx from "clsx";
 export default function Input({
   id,
   label,
+  labelAction,
   hint,
   error,
   leading,
@@ -21,10 +22,15 @@ export default function Input({
 
   return (
     <div className="flex w-full flex-col gap-2">
-      {label ? (
-        <label htmlFor={id} className="text-sm font-medium text-ink-2">
-          {label}
-        </label>
+      {label || labelAction ? (
+        <div className="flex items-baseline justify-between gap-3">
+          {label ? (
+            <label htmlFor={id} className="text-sm font-medium text-ink-2">
+              {label}
+            </label>
+          ) : null}
+          {labelAction}
+        </div>
       ) : null}
 
       <div className="relative">

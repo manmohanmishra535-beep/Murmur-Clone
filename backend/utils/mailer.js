@@ -42,7 +42,13 @@ async function sendMail({ to, subject, text }) {
   const mailer = getTransport();
 
   if (!mailer) {
-    console.log(`[api] mail not sent (SMTP not configured)\nTo: ${to}\nSubject: ${subject}\n\n${text}\n`);
+    // Tests assert on the response and the stored hash; printing every link
+    // would only bury the suite's own output.
+    if (!config.isTest) {
+      console.log(
+        `[api] mail not sent (SMTP not configured)\nTo: ${to}\nSubject: ${subject}\n\n${text}\n`
+      );
+    }
     return false;
   }
 

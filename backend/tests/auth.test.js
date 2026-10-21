@@ -203,7 +203,9 @@ describe("POST /api/auth/forgot-password", () => {
     await registerUser();
 
     const token = tokenFrom(await requestReset());
-    const stored = await User.findOne({ username: "priya" }).select("+resetTokenHash");
+    const stored = await User.findOne({ username: "priya" }).select(
+      "+resetTokenHash +resetTokenExpiresAt"
+    );
 
     expect(token).toMatch(/^[a-f0-9]{64}$/);
     expect(stored.resetTokenHash).toMatch(/^[a-f0-9]{64}$/);
@@ -214,11 +216,22 @@ describe("POST /api/auth/forgot-password", () => {
     expect(plain.resetTokenHash).toBeUndefined();
   });
 
+  it("leaves the current password working until the link is used", async () => {
+    await registerUser();
+    await requestReset();
+
+    const res = await anonymous()
+      .post("/api/auth/login")
+      .send({ email: VALID_USER.email, password: VALID_USER.password });
+
+    expect(res.status).toBe(200);
+  });
+
   it("returns 422 for a malformed email", async () => {
     const res = await requestReset("not-an-address");
 
     expect(res.status).toBe(422);
-    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(res.body.error.code).toBe("VALIDATION_FAILED");
     expect(res.body.error.fields.email).toBeDefined();
   });
 

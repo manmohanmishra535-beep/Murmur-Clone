@@ -23,6 +23,29 @@ export const authService = {
     await api.post("/auth/logout");
   },
 
+  /**
+   * Ask for a reset link. The API always answers 202 with the same message;
+   * outside production it also returns `resetUrl`, because no SMTP server is
+   * assumed to exist on a laptop.
+   */
+  async forgotPassword(email) {
+    const { data } = await api.post(
+      "/auth/forgot-password",
+      { email },
+      { skipAuthRedirect: true }
+    );
+    return data;
+  },
+
+  async resetPassword({ token, password }) {
+    const { data } = await api.post(
+      "/auth/reset-password",
+      { token, password },
+      { skipAuthRedirect: true }
+    );
+    return data;
+  },
+
   /** hydrate on first load; a 401 here just means "no session". */
   async me() {
     const { data } = await api.get("/auth/me", { skipAuthRedirect: true });
