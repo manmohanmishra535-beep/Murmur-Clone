@@ -1,6 +1,6 @@
 "use strict";
 
-const { verifyToken, COOKIE_NAME } = require("../utils/token");
+const { verifyToken, isCurrentToken, COOKIE_NAME } = require("../utils/token");
 const User = require("../models/User");
 const AppError = require("../utils/AppError");
 const asyncHandler = require("../utils/asyncHandler");
@@ -22,6 +22,11 @@ const requireAuth = asyncHandler(async (req, _res, next) => {
 
   const user = await User.findById(payload.id);
   if (!user) throw AppError.unauthenticated("Your session expired. Log in again.");
+  // A password reset bumps the account's generation, which retires every
+  // cookie handed out before it.
+  if (!isCurrentToken(payload, user)) {
+    throw AppError.unauthenticated("Your password changed. Log in again.");
+  }
 
   req.user = user;
   next();
@@ -34,7 +39,10 @@ const optionalAuth = asyncHandler(async (req, _res, next) => {
 
   try {
     const payload = verifyToken(token);
-    req.user = await User.findById(payload.id);
+    const user = await User.findById(payload.id);
+    // Same generation check as requireAuth, but a stale cookie simply means
+    // "treat this request as anonymous" rather than a 401.
+    req.user = user && isCurrentToken(payload, user) ? user : undefined;
   } catch {
     req.user = undefined;
   }

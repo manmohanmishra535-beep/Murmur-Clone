@@ -23,11 +23,27 @@ const config = {
     apiKey: process.env.CLOUDINARY_API_KEY,
     apiSecret: process.env.CLOUDINARY_API_SECRET,
   },
+  mail: {
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 587,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    from: process.env.MAIL_FROM || "Murmur <no-reply@murmur.local>",
+  },
 };
 
 config.cloudinaryEnabled = Boolean(
   config.cloudinary.cloudName && config.cloudinary.apiKey && config.cloudinary.apiSecret
 );
+
+config.mailEnabled = Boolean(config.mail.host);
+
+/**
+ * Without SMTP every reset link would vanish into the log, which makes the
+ * flow unusable on a laptop. Outside production the API therefore returns the
+ * link in the response so the page can offer it. Production never does.
+ */
+config.exposeResetUrl = !config.isProd;
 
 /**
  * Fail fast on boot when a required variable is missing or unsafe.

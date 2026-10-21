@@ -38,15 +38,28 @@ const userSchema = new mongoose.Schema(
     followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     following: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     bookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: "Post" }],
+    // A password reset stores only a SHA-256 hash of the emailed token, so a
+    // database leak cannot be turned into working reset links. Both fields are
+    // cleared as soon as the token is used.
+    resetTokenHash: { type: String, select: false },
+    resetTokenExpiresAt: { type: Date, select: false },
+    // Bumped whenever the password changes. Every JWT carries the version it
+    // was signed with, so a reset logs out sessions that used the old password.
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
 // Serves /api/users/search (Phase 4) as an as-you-type prefix fallback.
 userSchema.index({ username: "text", displayName: "text" });
+// The reset lookup is by hash, and only a handful of users have one at a time.
+userSchema.index({ resetTokenHash: 1 }, { sparse: true });
 
 userSchema.pre("save", async function hashPassword() {
   if (!this.isModified("password")) return;
+  // An existing session must not survive a password change, so every save
+  // that rewrites the hash also retires the tokens signed before it.
+  if (!this.isNew) this.tokenVersion = (this.tokenVersion || 0) + 1;
   // Cost 12 per the security checklist. bcryptjs is a drop-in for bcrypt with
   // the same $2a$ format, chosen so npm install needs no native build step.
   const bcrypt = require("bcryptjs");
@@ -68,6 +81,9 @@ userSchema.set("toJSON", {
     delete ret.password;
     delete ret.bookmarks;
     delete ret.email;
+    delete ret.resetTokenHash;
+    delete ret.resetTokenExpiresAt;
+    delete ret.tokenVersion;
     return ret;
   },
 });

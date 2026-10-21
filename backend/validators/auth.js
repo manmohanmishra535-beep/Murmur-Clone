@@ -29,4 +29,19 @@ const loginRules = [
   body("password").isString().notEmpty().withMessage("Enter your password."),
 ];
 
-module.exports = { registerRules, loginRules, usernameRule, emailRule, passwordRule };
+const forgotPasswordRules = [emailRule];
+
+const resetPasswordRules = [
+  body("token").isString().trim().notEmpty().withMessage("That reset link is missing its token."),
+  passwordRule,
+];
+
+module.exports = {
+  registerRules,
+  loginRules,
+  forgotPasswordRules,
+  resetPasswordRules,
+  usernameRule,
+  emailRule,
+  passwordRule,
+};

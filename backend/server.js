@@ -19,6 +19,9 @@ async function start() {
     console.log(`[api] Murmur API listening on http://localhost:${config.port}`);
     console.log(`[api] CORS origin: ${config.clientUrl}`);
     if (!config.cloudinaryEnabled) console.warn("[api] Image uploads are disabled.");
+    if (!config.mailEnabled) {
+      console.warn("[api] SMTP is not configured; password reset links are logged only.");
+    }
   });
 
   const shutdown = async (signal) => {

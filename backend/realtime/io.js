@@ -4,7 +4,8 @@ const { Server } = require("socket.io");
 const mongoose = require("mongoose");
 const config = require("../config/env");
 const Conversation = require("../models/Conversation");
-const { verifyToken, COOKIE_NAME } = require("../utils/token");
+const User = require("../models/User");
+const { verifyToken, isCurrentToken, COOKIE_NAME } = require("../utils/token");
 const { setIO, room, emitToUser } = require("./emitter");
 const { createMessage } = require("../services/conversationService");
 
@@ -36,11 +37,24 @@ function attach(server) {
     cors: { origin: config.clientUrl, credentials: true },
   });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     if (!socket.handshake.headers.cookie) return next(new Error("UNAUTHENTICATED"));
+
+    let payload;
     try {
-      const payload = verifyToken(tokenFromHandshake(socket));
-      socket.data.userId = String(payload.id);
+      payload = verifyToken(tokenFromHandshake(socket));
+    } catch {
+      return next(new Error("UNAUTHENTICATED"));
+    }
+
+    // The handshake costs one extra read so a socket opened before a password
+    // reset dies with the REST session instead of outliving it.
+    try {
+      const user = await User.findById(payload.id).select("tokenVersion");
+      if (!user || !isCurrentToken(payload, user)) {
+        return next(new Error("UNAUTHENTICATED"));
+      }
+      socket.data.userId = String(user._id);
       return next();
     } catch {
       return next(new Error("UNAUTHENTICATED"));
