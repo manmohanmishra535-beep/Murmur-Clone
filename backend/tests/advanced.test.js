@@ -728,6 +728,24 @@ describe("realtime", () => {
     socket.close();
   });
 
+  it("refuses a socket whose cookie predates a password reset", async () => {
+    const author = await registerUser();
+    const staleCookie = findCookie(author.res, "token");
+
+    const forgot = await anonymous()
+      .post("/api/auth/forgot-password")
+      .send({ email: author.payload.email });
+    const token = new URL(forgot.body.resetUrl).searchParams.get("token");
+
+    await anonymous()
+      .post("/api/auth/reset-password")
+      .send({ token, password: "brand-new-pass" });
+
+    // The handshake runs the same generation check as req.user, so an open
+    // session cannot outlive the password it was authenticated with.
+    await expect(connect(null, staleCookie)).rejects.toThrow("UNAUTHENTICATED");
+  });
+
   it("pushes notification:new when someone likes your post, with no refresh", async () => {
     const author = await registerUser();
     const created = await post(author.client, "This one will be liked.");

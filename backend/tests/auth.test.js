@@ -176,6 +176,158 @@ describe("POST /api/auth/logout", () => {
   });
 });
 
+describe("POST /api/auth/forgot-password", () => {
+  /** The API answers with the reset link outside production; tests use it. */
+  async function requestReset(email = VALID_USER.email) {
+    const res = await anonymous().post("/api/auth/forgot-password").send({ email });
+    return res;
+  }
+
+  function tokenFrom(res) {
+    return new URL(res.body.resetUrl).searchParams.get("token");
+  }
+
+  it("answers 202 with the same message for a known and an unknown address", async () => {
+    await registerUser();
+
+    const known = await requestReset();
+    const unknown = await requestReset("nobody@example.com");
+
+    expect(known.status).toBe(202);
+    expect(unknown.status).toBe(202);
+    expect(known.body.message).toBe(unknown.body.message);
+    expect(known.body.message).toMatch(/if an account exists/i);
+  });
+
+  it("stores only a hash of the token, never the token itself", async () => {
+    await registerUser();
+
+    const token = tokenFrom(await requestReset());
+    const stored = await User.findOne({ username: "priya" }).select("+resetTokenHash");
+
+    expect(token).toMatch(/^[a-f0-9]{64}$/);
+    expect(stored.resetTokenHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(stored.resetTokenHash).not.toBe(token);
+    expect(stored.resetTokenExpiresAt.getTime()).toBeGreaterThan(Date.now());
+    // The document that comes back from a normal query never carries these.
+    const plain = await User.findOne({ username: "priya" });
+    expect(plain.resetTokenHash).toBeUndefined();
+  });
+
+  it("returns 422 for a malformed email", async () => {
+    const res = await requestReset("not-an-address");
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(res.body.error.fields.email).toBeDefined();
+  });
+
+  it("replaces an earlier link when a new one is requested", async () => {
+    await registerUser();
+
+    const first = tokenFrom(await requestReset());
+    const second = tokenFrom(await requestReset());
+    expect(second).not.toBe(first);
+
+    const res = await anonymous()
+      .post("/api/auth/reset-password")
+      .send({ token: first, password: "brand-new-pass" });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/auth/reset-password", () => {
+  async function linkToken() {
+    const res = await anonymous()
+      .post("/api/auth/forgot-password")
+      .send({ email: VALID_USER.email });
+    return new URL(res.body.resetUrl).searchParams.get("token");
+  }
+
+  it("changes the password, spends the link and does not sign the caller in", async () => {
+    await registerUser();
+    const token = await linkToken();
+
+    const reset = await anonymous()
+      .post("/api/auth/reset-password")
+      .send({ token, password: "brand-new-pass" });
+
+    expect(reset.status).toBe(200);
+    expect(findCookie(reset, "token")).toBeNull();
+
+    const oldPassword = await anonymous()
+      .post("/api/auth/login")
+      .send({ email: VALID_USER.email, password: VALID_USER.password });
+    expect(oldPassword.status).toBe(401);
+
+    const newPassword = await anonymous()
+      .post("/api/auth/login")
+      .send({ email: VALID_USER.email, password: "brand-new-pass" });
+    expect(newPassword.status).toBe(200);
+
+    // A reset link is single use.
+    const reused = await anonymous()
+      .post("/api/auth/reset-password")
+      .send({ token, password: "even-newer-pass" });
+    expect(reused.status).toBe(400);
+    expect(reused.body.error.code).toBe("INVALID_RESET_TOKEN");
+  });
+
+  it("logs out sessions opened before the reset", async () => {
+    const { client } = await registerUser();
+    const token = await linkToken();
+
+    await anonymous().post("/api/auth/reset-password").send({ token, password: "brand-new-pass" });
+
+    const me = await client.get("/api/auth/me");
+    expect(me.status).toBe(401);
+    expect(me.body.error.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("rejects an expired link", async () => {
+    const { user } = await registerUser();
+    const token = await linkToken();
+
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { resetTokenExpiresAt: new Date(Date.now() - 60 * 1000) } }
+    );
+
+    const res = await anonymous()
+      .post("/api/auth/reset-password")
+      .send({ token, password: "brand-new-pass" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("INVALID_RESET_TOKEN");
+  });
+
+  it("rejects an unknown token with the same answer", async () => {
+    const res = await anonymous()
+      .post("/api/auth/reset-password")
+      .send({ token: "a".repeat(64), password: "brand-new-pass" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("INVALID_RESET_TOKEN");
+  });
+
+  it("returns 422 when the new password is too short or the token is missing", async () => {
+    const short = await anonymous()
+      .post("/api/auth/reset-password")
+      .send({ token: "a".repeat(64), password: "short" });
+
+    expect(short.status).toBe(422);
+    expect(short.body.error.fields.password).toBeDefined();
+
+    const missing = await anonymous()
+      .post("/api/auth/reset-password")
+      .send({ password: "brand-new-pass" });
+
+    expect(missing.status).toBe(422);
+    expect(missing.body.error.fields.token).toBeDefined();
+  });
+});
+
 describe("GET /api/health", () => {
   it("reports ok without authentication", async () => {
     const res = await anonymous().get("/api/health");
