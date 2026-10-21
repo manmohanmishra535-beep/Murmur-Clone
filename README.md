@@ -654,7 +654,7 @@ the author's socket, along with `notification:remove`, `post:counts`, a socket-s
 stored for both participants, a failed send returning an ack instead of throwing, and typing
 reaching the peer only.
 
-Frontend: 114 tests over the pure modules — `compactNumber`, `relativeTime`,
+Frontend: 118 tests over the pure modules — `compactNumber`, `relativeTime`,
 `joinedDate`, the profile validators (display name and bio), the Clerk error-message and
 password-policy helpers, the composer counter maths and
 `isPostable` with images, the image type/size/batch rules, the Cloudinary transform helper,
