@@ -13,6 +13,9 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
+    # Free by default: the demo does not need a paid instance. Free services
+    # sleep after 15 minutes idle, so the first request can take ~50 seconds.
+    plan: free
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
