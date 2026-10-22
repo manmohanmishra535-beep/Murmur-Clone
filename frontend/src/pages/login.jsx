@@ -225,6 +225,12 @@ export default function LoginPage() {
       >
         {mode === "signIn" ? (
           <>
+            {router.query.signedOut === "1" ? (
+              <div className="mb-4">
+                <FormAlert tone="notice">You are logged out.</FormAlert>
+              </div>
+            ) : null}
+
             <GoogleButton onClick={handleGoogle} disabled={busy} />
 
             <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wide text-ink-3">

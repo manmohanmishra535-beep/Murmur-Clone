@@ -1,7 +1,9 @@
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import clsx from "clsx";
 import Avatar from "./Avatar";
+import ConfirmDialog from "./ConfirmDialog";
 import NavItem from "./NavItem";
 import {
   BellIcon,
@@ -15,7 +17,6 @@ import {
   UserIcon,
 } from "./icons";
 import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/useToast";
 import { useUnreadCount } from "@/hooks/useNotifications";
 
 /**
@@ -28,9 +29,10 @@ import { useUnreadCount } from "@/hooks/useNotifications";
  */
 export default function Sidebar() {
   const { user, logout } = useAuth();
-  const { toast } = useToast();
   const router = useRouter();
   const { data: unreadCount = 0 } = useUnreadCount({ enabled: Boolean(user) });
+  const [confirming, setConfirming] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const profileActive = user ? router.pathname === `/${user.username}` : false;
 
@@ -68,9 +70,16 @@ export default function Sidebar() {
   }
 
   async function handleLogout() {
-    await logout();
-    toast("You are logged out.", { variant: "success" });
-    router.replace("/login");
+    setLoggingOut(true);
+    try {
+      await logout({ redirectUrl: "/login?signedOut=1" });
+      // The query flag survives a full reload, so the login page can confirm
+      // the sign-out even if Clerk reloads the document.
+      await router.replace("/login?signedOut=1");
+    } finally {
+      setLoggingOut(false);
+      setConfirming(false);
+    }
   }
 
   return (
@@ -134,7 +143,7 @@ export default function Sidebar() {
 
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={() => setConfirming(true)}
             aria-label="Log out"
             title="Log out"
             className="grid h-11 w-11 shrink-0 place-items-center rounded-pill text-ink-3 transition-colors duration-fast hover:bg-surface hover:text-ink"
@@ -143,6 +152,16 @@ export default function Sidebar() {
           </button>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={confirming}
+        title="Log out of Murmur?"
+        description="You will need to sign in again to post, reply or read your messages."
+        confirmLabel="Log out"
+        busy={loggingOut}
+        onConfirm={handleLogout}
+        onCancel={() => setConfirming(false)}
+      />
     </aside>
   );
 }

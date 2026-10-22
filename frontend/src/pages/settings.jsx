@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import PageHeader from "@/components/PageHeader";
 import Avatar from "@/components/Avatar";
 import Button from "@/components/Button";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import Input from "@/components/Input";
 import Textarea from "@/components/Textarea";
 import { LogoutIcon, MonitorIcon, MoonIcon, SunIcon } from "@/components/icons";
@@ -28,6 +29,8 @@ export default function SettingsPage() {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [theme, setThemeState] = useState("system");
 
   const fileRef = useRef(null);
@@ -112,9 +115,14 @@ export default function SettingsPage() {
   }
 
   async function handleLogout() {
-    await logout();
-    toast("You are logged out.", { variant: "success" });
-    router.replace("/login");
+    setLoggingOut(true);
+    try {
+      await logout({ redirectUrl: "/login?signedOut=1" });
+      await router.replace("/login?signedOut=1");
+    } finally {
+      setLoggingOut(false);
+      setConfirming(false);
+    }
   }
 
   if (!user) {
@@ -278,13 +286,23 @@ export default function SettingsPage() {
           </dl>
 
           <div className="mt-5">
-            <Button type="button" variant="secondary" onClick={handleLogout}>
+            <Button type="button" variant="secondary" onClick={() => setConfirming(true)}>
               <LogoutIcon size={18} />
               Log out
             </Button>
           </div>
         </section>
       </form>
+
+      <ConfirmDialog
+        open={confirming}
+        title="Log out of Murmur?"
+        description="You will need to sign in again to post, reply or read your messages."
+        confirmLabel="Log out"
+        busy={loggingOut}
+        onConfirm={handleLogout}
+        onCancel={() => setConfirming(false)}
+      />
     </>
   );
 }

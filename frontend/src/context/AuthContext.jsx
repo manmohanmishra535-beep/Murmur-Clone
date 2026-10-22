@@ -113,13 +113,16 @@ export function AuthProvider({ children }) {
     };
   }, [isLoaded, isSignedIn, clearSession, signOut]);
 
-  const logout = useCallback(async () => {
-    try {
-      await signOut();
-    } finally {
-      clearSession();
-    }
-  }, [signOut, clearSession]);
+  const logout = useCallback(
+    async (options) => {
+      try {
+        await signOut(options);
+      } finally {
+        clearSession();
+      }
+    },
+    [signOut, clearSession]
+  );
 
   /** Merge a server response into the cached user after a profile save. */
   const updateUser = useCallback((patch) => {

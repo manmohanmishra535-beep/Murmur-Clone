@@ -1,10 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // The deployment image carries the traced server instead of the whole
-  // node_modules tree: `next build` writes .next/standalone, and the Dockerfile
-  // runs that server. `next start` still works from the same build.
-  output: "standalone",
+  // Standalone output is for Docker / production build only.
+  // In `next dev` on Windows, standalone tracing conflicts with file caching.
+  output: process.env.NODE_ENV === "production" ? "standalone" : undefined,
   // This folder has its own lockfile; without this Next walks up to a parent
   // lockfile and traces the wrong workspace root.
   outputFileTracingRoot: __dirname,
