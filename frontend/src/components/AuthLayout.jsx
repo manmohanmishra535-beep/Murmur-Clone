@@ -7,7 +7,7 @@ import Link from "next/link";
 export default function AuthLayout({ title, subtitle, children, footer }) {
   return (
     <main className="min-h-dvh bg-bg text-ink lg:grid lg:grid-cols-[1.05fr_1fr]">
-      <section className="relative hidden flex-col justify-between overflow-hidden border-r border-line bg-surface p-12 lg:flex">
+      <section className="relative hidden flex-col overflow-hidden border-r border-line bg-surface p-12 lg:flex">
         <Link href="/" className="flex items-center gap-2" aria-label="Murmur home">
           <span className="grid h-10 w-10 place-items-center rounded-pill bg-accent font-display text-2xl font-bold lowercase text-accent-ink">
             m
@@ -15,7 +15,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
           <span className="font-display text-2xl font-bold tracking-tight">Murmur</span>
         </Link>
 
-        <div className="max-w-lg">
+        <div className="my-auto max-w-lg">
           <p className="font-display text-sm font-semibold uppercase tracking-[0.18em] text-accent">
             Design system v1.0
           </p>
@@ -37,10 +37,6 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
             </figcaption>
           </figure>
         </div>
-
-        <p className="text-xs text-ink-3">
-          Murmur · Engineering docs v1.0 · Built with Next.js and Express
-        </p>
       </section>
 
       <section className="flex min-h-dvh items-center justify-center px-4 py-10 sm:px-8">
