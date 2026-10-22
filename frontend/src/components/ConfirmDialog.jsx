@@ -1,9 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Button from "./Button";
 
 /**
- * A small, accessible confirmation dialog. Escape or the backdrop cancels;
- * focus starts on Cancel so a stray Enter never confirms a destructive action.
+ * A focused confirmation dialog. It portals to <body> so no layout ancestor can
+ * trap it, dims and blurs the page behind it, and locks scrolling while open.
+ * Escape or the backdrop cancels; focus starts on Cancel so a stray Enter never
+ * confirms a destructive action.
  */
 export default function ConfirmDialog({
   open,
@@ -16,20 +19,29 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (!open) return undefined;
     function onKeyDown(event) {
       if (event.key === "Escape") onCancel();
     }
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previous;
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open, onCancel]);
 
-  if (!open) return null;
+  if (!mounted || !open) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel();
@@ -40,26 +52,27 @@ export default function ConfirmDialog({
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby={description ? "confirm-dialog-description" : undefined}
-        className="w-full max-w-sm rounded-lg border border-line bg-surface p-5 shadow-2"
+        className="animate-rise w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-2"
       >
-        <h2 id="confirm-dialog-title" className="font-display text-lg font-semibold text-ink">
+        <h2 id="confirm-dialog-title" className="font-display text-xl font-semibold text-ink">
           {title}
         </h2>
         {description ? (
-          <p id="confirm-dialog-description" className="mt-2 text-sm text-ink-2">
+          <p id="confirm-dialog-description" className="mt-2 text-base leading-relaxed text-ink-2">
             {description}
           </p>
         ) : null}
 
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" autoFocus onClick={onCancel} disabled={busy}>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" autoFocus onClick={onCancel} disabled={busy} className="sm:w-auto">
             {cancelLabel}
           </Button>
-          <Button variant={confirmVariant} loading={busy} onClick={onConfirm}>
+          <Button variant={confirmVariant} loading={busy} onClick={onConfirm} className="sm:w-auto">
             {confirmLabel}
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
