@@ -499,7 +499,8 @@ wherever the viewer meets the post.
 ### Socket.IO events
 
 The socket carries live pushes and one client-to-server write. Everything that changes data
-goes over REST, so there is only ever one code path that writes.
+goes over REST, so there is only ever one code path that writes. The reasoning behind that
+split is in [the Q&A on REST and Socket.IO](docs/qa.md#how-do-rest-and-socketio-divide-the-work).
 
 | Event | Direction | Payload |
 | --- | --- | --- |
