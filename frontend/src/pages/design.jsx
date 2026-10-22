@@ -314,7 +314,7 @@ export default function DesignSystemPage() {
           <aside className="hidden lg:block">
             <nav
               aria-label="Design system sections"
-              className="sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto py-10 pr-2"
+              className="sticky top-[65px] max-h-[calc(100dvh-65px)] overflow-y-auto py-10 pr-2"
             >
               {NAV.map((group) => (
                 <div key={group.group} className="mb-6">
@@ -345,8 +345,11 @@ export default function DesignSystemPage() {
           </aside>
 
           <div className="min-w-0 pb-24">
-            <div className="sticky top-[57px] z-20 -mx-4 border-b border-line bg-bg px-4 py-2 lg:hidden">
-              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+            <div className="sticky top-[65px] z-20 -mx-4 border-b border-line bg-bg px-4 py-2 lg:hidden">
+              <nav
+                aria-label="Design system sections (compact)"
+                className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]"
+              >
                 {allItems.map((item) => (
                   <a
                     key={item.id}
@@ -362,7 +365,7 @@ export default function DesignSystemPage() {
                     {item.label}
                   </a>
                 ))}
-              </div>
+              </nav>
             </div>
 
             <section id="overview" className="scroll-mt-32 py-10 lg:scroll-mt-20">
