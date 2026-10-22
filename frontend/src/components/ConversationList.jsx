@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Avatar from "./Avatar";
+import Button from "./Button";
 import EmptyState from "./EmptyState";
 import Skeleton from "./Skeleton";
 import { MailIcon } from "./icons";
@@ -75,9 +76,24 @@ export default function ConversationList({ query }) {
   }
 
   if (query.isError) {
+    const offline = query.error && !query.error.response;
+
     return (
-      <EmptyState icon={MailIcon} title="Could not load your messages">
+      <EmptyState
+        icon={MailIcon}
+        title="Could not load your messages"
+        action={
+          <Button
+            variant="secondary"
+            loading={query.isFetching}
+            onClick={() => query.refetch()}
+          >
+            Try again
+          </Button>
+        }
+      >
         {errorMessage(query.error, "The API did not answer. Try again in a moment.")}
+        {offline ? " The free API may be waking up; retry in a moment." : null}
       </EmptyState>
     );
   }

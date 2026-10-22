@@ -333,6 +333,13 @@ adapter before scaling. A free Render instance sleeps when idle, which drops soc
 client reconnects and refetches the unread count when it does, so notifications sent while it
 was asleep are not replayed, only the badge catches up.
 
+The first request after a sleep can take around 50 seconds. Three things keep that from
+looking like an outage: the query client retries network failures three times with a 5s gap
+(a `401`/`403` is never retried), `.github/workflows/keep-api-awake.yml` pings `/api/health`
+every 10 minutes, and the Messages screen offers a manual **Try again**. GitHub can delay
+scheduled runs and the free instance is not a production SLA; use a paid instance, or a
+dedicated uptime monitor, when the API must always answer immediately.
+
 ### CORS, Clerk and the two origins
 
 There is no session cookie in this design. The browser asks Clerk for a session token and

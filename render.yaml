@@ -18,6 +18,12 @@ services:
     plan: free
     healthCheckPath: /api/health
     autoDeploy: true
+    # A docs or frontend push should not restart the API. Backend changes and
+    # this blueprint itself still deploy.
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
     envVars:
       - key: NODE_ENV
         value: production

@@ -24,7 +24,19 @@ export default function App({ Component, pageProps }) {
         defaultOptions: {
           queries: {
             staleTime: 30_000,
-            retry: 1,
+            // Render's free instance sleeps after 15 minutes. A cold start can
+            // outlast one 15s request, so network failures get three attempts
+            // with a 5s gap; a 401/403 is final and never retried.
+            retry: (failureCount, error) => {
+              const status = error && error.response && error.response.status;
+              if (status === 401 || status === 403) return false;
+              if (!error || !error.response) return failureCount < 2;
+              return failureCount < 1;
+            },
+            retryDelay: (attemptIndex, error) =>
+              error && !error.response
+                ? 5_000
+                : Math.min(1_000 * 2 ** attemptIndex, 8_000),
             refetchOnWindowFocus: false,
           },
         },
