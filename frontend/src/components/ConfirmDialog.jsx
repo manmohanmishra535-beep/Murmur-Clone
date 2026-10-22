@@ -52,7 +52,7 @@ export default function ConfirmDialog({
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby={description ? "confirm-dialog-description" : undefined}
-        className="animate-rise w-full max-w-md rounded-xl border border-line bg-surface p-6 shadow-2"
+        className="animate-rise w-full max-w-md rounded-lg border border-line bg-surface p-6 shadow-2"
       >
         <h2 id="confirm-dialog-title" className="font-display text-xl font-semibold text-ink">
           {title}
