@@ -16,10 +16,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
         </Link>
 
         <div className="my-auto max-w-lg">
-          <p className="font-display text-sm font-semibold uppercase tracking-[0.18em] text-accent">
-            Design system v1.0
-          </p>
-          <h2 className="mt-4 font-display text-3xl font-semibold leading-[1.1] tracking-tight">
+          <h2 className="font-display text-3xl font-semibold leading-[1.1] tracking-tight">
             Short posts,
             <br />
             quiet interface.
