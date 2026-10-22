@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "58581aaa-f0a6-4601-981e-4777bc61a31e",
+  "status": "current",
+  "command": "deliver",
+  "type": "sequence",
+  "input": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\.archify\\sequence-web-request-cache-miss-20261022-154832\\candidate.json",
+  "output": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\.archify\\sequence-web-request-cache-miss-20261022-154832\\web-request-cache-miss.html",
+  "specification": {
+    "sha256": "350f6c406d3f26ebb36822157b4ee682dcadbcb3cf94171d2074d8a27099c1e4",
+    "bytes": 3258
+  },
+  "artifact": {
+    "sha256": "58a0f6aa14a9a2bedfb961772a1f07bf0c0d41ffde16971fcbbc26586c2781ce",
+    "bytes": 812786
+  }
+}
