@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Web Request with a Redis Cache Miss",
+    "subtitle": "Browser calls the API, Redis misses, Postgres answers, and the API fills the cache",
+    "output": "docs/diagrams/web-request-cache-miss.html",
+    "viewBox": [1040, 530],
+    "column_fit": "spread",
+    "animation": "trace",
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    { "id": "browser", "type": "external", "label": "Browser", "sublabel": "user agent" },
+    { "id": "api", "type": "backend", "label": "API", "sublabel": "request handler" },
+    { "id": "redis", "type": "database", "label": "Redis", "sublabel": "cache" },
+    { "id": "postgres", "type": "database", "label": "Postgres", "sublabel": "source of truth" }
+  ],
+  "segments": [
+    { "from": 150, "to": 225, "label": "Request" },
+    { "from": 230, "to": 338, "label": "Cache miss · Postgres fallback" },
+    { "from": 344, "to": 416, "label": "Fill cache · respond" }
+  ],
+  "messages": [
+    {
+      "id": "api-call",
+      "from": "browser",
+      "to": "api",
+      "y": 170,
+      "label": "GET /profile/alex",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cache-read",
+      "from": "api",
+      "to": "redis",
+      "y": 208,
+      "label": "GET profile:alex",
+      "variant": "default"
+    },
+    {
+      "id": "cache-miss",
+      "from": "redis",
+      "to": "api",
+      "y": 243,
+      "label": "MISS",
+      "variant": "return",
+      "note": "A HIT returns without Postgres"
+    },
+    {
+      "id": "db-read",
+      "from": "api",
+      "to": "postgres",
+      "y": 288,
+      "label": "SELECT * FROM users WHERE handle = $1",
+      "variant": "emphasis"
+    },
+    {
+      "id": "db-rows",
+      "from": "postgres",
+      "to": "api",
+      "y": 323,
+      "label": "1 row",
+      "variant": "return"
+    },
+    {
+      "id": "cache-fill",
+      "from": "api",
+      "to": "redis",
+      "y": 362,
+      "label": "SET profile:alex EX 300",
+      "variant": "dashed"
+    },
+    {
+      "id": "api-response",
+      "from": "api",
+      "to": "browser",
+      "y": 398,
+      "label": "200 JSON",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    { "participant": "api", "from": 165, "to": 410, "type": "backend" },
+    { "participant": "redis", "from": 203, "to": 250, "type": "database" },
+    { "participant": "postgres", "from": 283, "to": 330, "type": "database" },
+    { "participant": "redis", "from": 357, "to": 370, "type": "database" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Cold read",
+      "items": [
+        "The API always asks Redis first, so a warm key never reaches Postgres",
+        "Return arrows are quieter than forward calls so the read path stays readable"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Fill on miss",
+      "items": [
+        "A miss is answered from Postgres, the source of truth",
+        "The row is written back to Redis with a TTL before the response leaves the API"
+      ]
+    }
+  ]
+}

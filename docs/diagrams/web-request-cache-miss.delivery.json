@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "27d4c3a4-a4bb-4c15-8f03-2df80027f31e",
+  "status": "current",
+  "command": "deliver",
+  "type": "sequence",
+  "input": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\docs\\diagrams\\web-request-cache-miss.sequence.json",
+  "output": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\docs\\diagrams\\web-request-cache-miss.html",
+  "specification": {
+    "sha256": "ca6e8da25b466e72504a5941cea5d280dd698f8ed2403ac14fe5fd88ac6b7bf4",
+    "bytes": 3027
+  },
+  "artifact": {
+    "sha256": "451a64169ce22ead648dd4db096e75544f9be132799be2a3aa085ef445a191fb",
+    "bytes": 812428
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "sequence",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\docs\\diagrams\\web-request-cache-miss.sequence.json",
+    "sha256": "ca6e8da25b466e72504a5941cea5d280dd698f8ed2403ac14fe5fd88ac6b7bf4",
+    "bytes": 3027
+  },
+  "artifact": {
+    "path": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\docs\\diagrams\\web-request-cache-miss.html",
+    "sha256": "451a64169ce22ead648dd4db096e75544f9be132799be2a3aa085ef445a191fb",
+    "bytes": 812428
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\docs\\diagrams\\web-request-cache-miss.finalize.json",
+    "summaryReceipt": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\docs\\diagrams\\web-request-cache-miss.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Users\\2014TU(259500)\\OneDrive\\文档\\Desktop\\Murmur Clone\\docs\\diagrams\\web-request-cache-miss.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-22T05:27:00.749Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 7502,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}
