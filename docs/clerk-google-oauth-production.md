@@ -97,13 +97,36 @@ needed as long as the app origin stays the same.
 
 ## 5. Email branding (removes the other Clerk trace)
 
+### What the current email shows
+
+Development instances send from `noreply@accounts.dev`, prefix the subject with
+`[Development]`, and use the Clerk **application name** as the sender name. The
+application is still unclaimed, so that name is the default **“My Application”**.
+
+### Rename the application now (no domain needed)
+
+1. Claim the application: `npx clerk@latest auth login`, or open
+   <https://dashboard.clerk.com> and claim it there.
+2. **Settings → General → Application name** → **Murmur** (also used by the
+   `app.name` variable in every email template).
+3. **Customization → Emails** → review the verification, reset-code and
+   password-changed templates; they now read “Murmur”.
+
+This fixes the sender name and the body immediately. The `[Development]` prefix and
+the `@accounts.dev` address are added by Clerk for every development instance and
+cannot be changed while the app stays in development.
+
+### Sender address on your own domain (production only)
+
 In the production instance:
 
-1. **Customization → Emails** → set the sender name to **Murmur** and add your
-   sending domain (Clerk shows the DNS records).
-2. Edit the verification and password-reset templates so they say Murmur, not
-   Clerk.
-3. Send a test reset email and confirm the sender and footer.
+1. **Customization → Emails** → add your sending domain (Clerk shows the SPF/DKIM
+   DNS records to add at your registrar).
+2. Set the sender name to **Murmur** and the address on your domain, e.g.
+   `noreply@murmur.example.com`.
+3. Edit the templates so no footer or body text mentions Clerk.
+4. Send a test reset email and confirm the sender, subject (no `[Development]`)
+   and footer.
 
 ## 6. Test
 
